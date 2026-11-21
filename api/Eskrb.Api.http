@@ -1,0 +1,6 @@
+@Eskrb.Api_HostAddress = http://localhost:5186
+
+GET {{Eskrb.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
