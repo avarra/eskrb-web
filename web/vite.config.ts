@@ -10,6 +10,17 @@ export default defineConfig({
     vue(),
     vueDevTools(),
   ],
+  server: {
+    allowedHosts: ['eskrb.home.sync.si'],
+    // Same-origin API access: the browser calls /api/*, Vite forwards to the .NET API.
+    proxy: {
+      '/api': {
+        target: process.env.API_URL ?? 'http://localhost:5000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

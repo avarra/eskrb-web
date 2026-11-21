@@ -2,4 +2,7 @@
   <Folder Name="/api/">
     <Project Path="api/Eskrb.Api.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Eskrb.Api.Tests/Eskrb.Api.Tests.csproj" />
+  </Folder>
 </Solution>

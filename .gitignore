@@ -484,3 +484,6 @@ $RECYCLE.BIN/
 # web
 web/node_modules/
 web/dist/
+
+# eSkrb local data
+api/data/

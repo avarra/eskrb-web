@@ -1,85 +1,77 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
-import HelloWorld from './components/HelloWorld.vue'
+import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
+const router = useRouter()
+
+function logout() {
+  auth.logout()
+  router.push('/login')
+}
 </script>
 
 <template>
-  <header>
-    <img alt="Vue logo" class="logo" src="@/assets/logo.svg" width="125" height="125" />
-
-    <div class="wrapper">
-      <HelloWorld msg="You did it!" />
-
-      <nav>
-        <RouterLink to="/">Home</RouterLink>
-        <RouterLink to="/about">About</RouterLink>
-      </nav>
-    </div>
-  </header>
-
-  <RouterView />
+  <nav v-if="auth.user">
+    <RouterLink to="/">Home</RouterLink>
+    <template v-if="auth.isStaff">
+      <RouterLink to="/episodes">Episodes</RouterLink>
+      <RouterLink to="/patients">Patients</RouterLink>
+      <RouterLink to="/groups">Doctor groups</RouterLink>
+      <RouterLink to="/protocols">Protocols</RouterLink>
+      <RouterLink v-if="auth.isAdmin" to="/users">Users</RouterLink>
+    </template>
+    <span class="spacer" />
+    <span>{{ auth.user.name }} ({{ auth.user.role }})</span>
+    <button @click="logout">Sign out</button>
+  </nav>
+  <main>
+    <RouterView />
+  </main>
 </template>
 
 <style scoped>
-header {
-  line-height: 1.5;
-  max-height: 100vh;
-}
-
-.logo {
-  display: block;
-  margin: 0 auto 2rem;
-}
-
 nav {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.spacer {
+  flex: 1;
+}
+main {
+  padding: 1rem;
+}
+</style>
+
+<style>
+table {
+  border-collapse: collapse;
   width: 100%;
-  font-size: 12px;
-  text-align: center;
-  margin-top: 2rem;
 }
-
-nav a.router-link-exact-active {
-  color: var(--color-text);
+th,
+td {
+  text-align: left;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
 }
-
-nav a.router-link-exact-active:hover {
-  background-color: transparent;
+.filters {
+  display: flex;
+  gap: 1rem;
+  align-items: end;
+  margin-bottom: 1rem;
 }
-
-nav a {
-  display: inline-block;
-  padding: 0 1rem;
-  border-left: 1px solid var(--color-border);
+.filters label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
 }
-
-nav a:first-of-type {
-  border: 0;
+.error {
+  color: #c0392b;
 }
-
-@media (min-width: 1024px) {
-  header {
-    display: flex;
-    place-items: center;
-    padding-right: calc(var(--section-gap) / 2);
-  }
-
-  .logo {
-    margin: 0 2rem 0 0;
-  }
-
-  header .wrapper {
-    display: flex;
-    place-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  nav {
-    text-align: left;
-    margin-left: -1rem;
-    font-size: 1rem;
-
-    padding: 1rem 0;
-    margin-top: 1rem;
-  }
+.inactive {
+  opacity: 0.5;
 }
 </style>

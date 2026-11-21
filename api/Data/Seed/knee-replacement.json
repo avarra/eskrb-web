@@ -1,0 +1,22 @@
+{
+  "id": "knee-replacement",
+  "name": "Knee replacement",
+  "durationDays": 42,
+  "questions": [
+    { "id": "pain", "type": "scale", "min": 0, "max": 10, "text": "Kako močna je bolečina v kolenu?" },
+    { "id": "temperature", "type": "number", "unit": "°C", "text": "Kakšna je vaša telesna temperatura?" },
+    { "id": "swelling", "type": "choice", "options": ["less", "same", "more"], "text": "Kakšna je oteklina v primerjavi z včeraj?" },
+    { "id": "wound", "type": "choice", "options": ["dry", "red", "discharge"], "text": "Kakšna je rana?" },
+    { "id": "calfPain", "type": "boolean", "text": "Ali čutite bolečino ali oteklino v mečih?" },
+    { "id": "breathing", "type": "boolean", "text": "Ali težko dihate ali čutite bolečino v prsih?" },
+    { "id": "walking", "type": "boolean", "text": "Ali ste danes hodili z berglami?" },
+    { "id": "wellbeing", "type": "scale", "min": 1, "max": 5, "text": "Kako se danes počutite?" }
+  ],
+  "rules": [
+    { "id": "fever", "field": "temperature", "op": ">=", "value": 38.0, "severity": "attention" },
+    { "id": "wound-discharge", "field": "wound", "op": "==", "value": "discharge", "severity": "attention" },
+    { "id": "high-pain", "field": "pain", "op": ">=", "value": 8, "severity": "attention" },
+    { "id": "calf", "field": "calfPain", "op": "==", "value": true, "severity": "urgent" },
+    { "id": "breathing", "field": "breathing", "op": "==", "value": true, "severity": "urgent" }
+  ]
+}
