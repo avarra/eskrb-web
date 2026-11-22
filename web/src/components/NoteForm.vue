@@ -49,7 +49,8 @@ async function save() {
       <textarea v-model="body" rows="3" maxlength="2000" />
     </label>
     <p v-if="kind === 'medication'" class="meta">
-      The patient's check-in will also ask whether they took their medication.
+      Shown to the patient as their instructions. The daily check-in already asks whether they took
+      their medication.
     </p>
     <p v-if="kind === 'private'" class="meta">The patient never sees this.</p>
     <p v-if="error" class="error">{{ error }}</p>

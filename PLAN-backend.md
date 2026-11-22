@@ -1,3 +1,5 @@
+> **Status note:** this is the original product plan and shared contract. Parts have since changed and the current behaviour is described in `CLAUDE.md` and `docs/`: no audio and no `voice`/`transcript` (text and photos only), check-ins are a conditional multi-choice questionnaire (`docs/checkin-questions.md`), and the build order below is done. Newer features (notes, escalation, charts, photo timeline, push, recovery twin) are not covered here.
+
 # Ada Hack 2026 — MVP plan: backend and dashboard
 
 ## MVP goal

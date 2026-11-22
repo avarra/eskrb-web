@@ -1,8 +1,27 @@
 # eSkrb
 
-A post-discharge recovery companion for knee-replacement patients, built for Ada Hack 2026.
+A post-discharge recovery companion for patients, built for Ada Hack 2026.
 Patients check in daily on their phone, the backend turns what they say into clear red-flag rules, and the clinic's staff
 see who needs attention, respond, and watch the recovery over time.
+
+<p align="center">
+  <img src="screenshots/triage.webp" alt="Triage board: needs attention, missed check-in, awaiting reply, stable" width="100%">
+</p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="screenshots/overview.webp" alt="Episode page: activity strip and trend chart with attention zone"><br><sub><b>Episode overview:</b> activity over time and trends with attention/urgent zones</sub></td>
+    <td width="50%"><img src="screenshots/timeline.webp" alt="Wound photo timeline with compare and slider"><br><sub><b>Wound photo timeline:</b> slide through the days, compare with the first photo</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="screenshots/notes.webp" alt="Staff notes and check-in history with the patient's answers"><br><sub><b>Notes and history:</b> medication, advice and private notes; check-ins with labelled answers and flags</sub></td>
+    <td width="50%"><img src="screenshots/review.webp" alt="Mark as reviewed with four outcome buttons"><br><sub><b>Mark as reviewed:</b> one tap records the outcome</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="screenshots/escalate.webp" alt="Escalate an episode to a senior doctor with a comment"><br><sub><b>Escalate:</b> hand an episode to the next level with a comment</sub></td>
+    <td width="50%"></td>
+  </tr>
+</table>
 
 > The patient app is an Expo (React Native) app that lives in a separate repo. This repo holds the **backend API** and the
 > **staff dashboard**.

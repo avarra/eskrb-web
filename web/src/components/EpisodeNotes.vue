@@ -16,7 +16,7 @@ const groups: { kind: NoteKind; title: string; hint: string }[] = [
   {
     kind: 'medication',
     title: 'Medication instructions',
-    hint: 'Shown to the patient. Adds a "took your meds?" question to the check-in.',
+    hint: 'Shown to the patient as their instructions. The daily check-in asks whether they took their meds.',
   },
   { kind: 'advice', title: 'Advice', hint: 'Shown to the patient.' },
   { kind: 'private', title: 'Private', hint: 'Doctors only. The patient never sees this.' },

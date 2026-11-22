@@ -1,6 +1,6 @@
 # Recovery twin (buddy) - agreed spec v0
 
-Status: **backend + dashboard built (see below), mobile screen pending.** Slovenian copy below is a draft for a native speaker to review. The app voice is formal "vi".
+Status: **backend and dashboard built (see "Implementation notes"), mobile screen pending.** Slovenian copy below is a draft for a native speaker to review. The app voice is formal "vi".
 
 ## Concept
 Staff pair two patients on the same protocol who are at about the same stage of recovery. The two see that the other is showing up, can send context-aware cheers and exchange short messages (typed or dictated). No health data is shared between them.

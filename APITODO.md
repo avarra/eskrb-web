@@ -1,51 +1,40 @@
-# API / dashboard TODO
+# Backlog
 
-Remaining work after the first write actions (episodes, groups, memberships, check-in submit).
-Everything is admin-only unless noted. Keep this file current: delete items when done, add new ones.
+Open work only (finished items are deleted; see `CLAUDE.md` for what exists). Keep this file current: remove items when done, add new ones.
 
-## Users and tokens
-- [ ] Create user: `POST /users` (name, role) and issue a login token for them. Without this new users cannot sign in.
-- [ ] Issue / list / revoke tokens: `POST|GET|DELETE /users/{id}/tokens`. Show a new token once; store only the hash.
-- [ ] Rename / change role: `PATCH /users/{id}`.
-- [ ] Deactivate user (needs a `DisabledAt` column; deleting would orphan episodes and messages).
-- [ ] Create patient (optionally with an episode in one step).
-
-## Groups and memberships
-- [ ] Rename group.
-- [ ] Edit a membership (level, title, `ActiveFrom`/`ActiveUntil`).
-- [ ] End a membership by setting `ActiveUntil` (keeps history) as an alternative to deleting.
-- [ ] Bulk reassign all episodes of a group (absence cover).
-
-## Protocols
-- [ ] Edit / create / archive protocols from the dashboard. Decide the source of truth first: the seeder
-      currently overwrites protocols from `api/Data/Seed/*.json` on every start, which would discard UI edits.
-- [ ] Validate protocol edits: every rule `field` must be a question id, and the operator/value type must suit the question type.
-
-## Notes, replies and the patient loop (from PLAN-backend.md)
-- [~] **LLM extraction:** provider = OpenAI (decided), `OpenAiExtractor` written + unit-tested but not yet run against the real API (needs `OpenAI:ApiKey`). Open: Slovenian eval set and model-tier choice (see the last line of this file), rate limit done (`llm` policy).
-- [ ] AI summary for the patient profile (cached, regenerated on new data).
-- [ ] Staff patient profile `GET /staff/episodes/{id}`: open flags, summary, pain series (the timeline endpoint already exists).
-- [ ] Optional photo caption (text sent with a photo) - decide; it would need extraction too.
-- (done) unread count + mark read. [ ] Push notifications (Expo token table + send on staff message; generic text only).
-- (done) Review: `POST /staff/episodes/{id}/review`. Still open: review a single item / unresolve.
-- (done) `GET /staff/triage`. Open: the dashboard board (web).
-- (done) Seed history (only for newly seeded episodes; reseed to get it on old ones).
-- [ ] Decide whether required questions exist (today unanswered questions are allowed) and whether one check-in per day should be enforced.
-- (done) cutoff is `Triage:MissedCutoffHour`.
-
-## Cross-cutting
+## Before real use
 - [ ] EF migrations instead of `EnsureCreated` (schema now changes under real data; needs `dotnet-ef`).
-- [ ] Audit log of admin/staff writes (who, action, target, time).
-- [ ] `POST /auth/demo-login` (flag-gated) and rate limiting on public/paid paths.
-- [ ] Soniox temporary-key endpoint (later; see CLAUDE.md).
-- (done) photo questions + `required`. Still open: protocol editing UI/validation for the new `photo`/`required` fields.
-- LLM: OpenAiExtractor is written but untested against the real API; build a Slovenian eval set (20 notes with expected values, esp. calf pain / breathing / negations) and pick the cheapest tier that gets every urgent case right. AI summary still open.
+- [ ] Data residency and legal: EU Soniox key + `Soniox:BaseUrl`, EU OpenAI project + `OpenAI:BaseUrl`, signed DPAs, DB/media on EU hosting (README, "Target deployment").
+- [ ] Clinical review of the protocol thresholds and rules, and of the 112 safety text.
+- [ ] Native review of all Slovenian copy (questions, cheers, 112 text).
+- [ ] Token expiry/rotation and real login (SI-PASS/passwords); `POST /auth/demo-login` behind `Auth:DemoLoginEnabled` if the demo needs it.
+- [ ] Audit log of admin/staff writes and of staff reading buddy threads (who, action, target, time).
 
-## Added later
-- (done) Episode notes (medication/advice/private) with the meds check-in question, escalation to the next group level, triage board, review, unread count, dashboard restyle.
-- [ ] Notify (push) on escalation and on new patient-visible notes. [ ] Escalation history on the triage card after resolve. [ ] Seeded history for the new `senior`/escalation demo. [ ] Mobile: show notes + the `medsTaken` question.
-- (done) Push service + device registration + admin manual send (on by default; `Notifications:Enabled=false` is the kill switch). [ ] Wire triggers (message, note, escalation, urgent flag), poll receipts, retry/backoff on 429/5xx, set `Expo:AccessToken`, mobile: register the token.
-- (done) Recovery twin backend + dashboard (docs/buddy.md). [ ] Mobile buddy screen, native review of the Slovenian cheer copy, in-app consent instead of the staff checkbox (later).
-- (done) Photo timeline (dashboard + `GET /episodes/{id}/photos`). [ ] Overlay/side-by-side of two arbitrary dates, wound measurements.
-- (done) Charts + activity strip on the episode page. [ ] Boolean/choice trends (calf pain, wound state), zoom/range, compare two episodes.
-- (done) Conditional + multi-choice questions, new knee-replacement questionnaire (docs/checkin-questions.md). [ ] Chart ordinal choice answers (feeling, progress), native review of the Slovenian copy and the 112 text, clinical review of thresholds.
+## Users, groups, protocols (admin)
+- [ ] Create user + issue login token; list/revoke tokens; rename / change role; deactivate user (needs a `DisabledAt` column); create patient with an episode in one step.
+- [ ] Rename group; edit a membership (level, title, `ActiveFrom`/`ActiveUntil`); end a membership without deleting; bulk reassign a group's episodes (absence cover).
+- [ ] Edit/create/archive protocols from the dashboard. Decide the source of truth first: the seeder overwrites protocols from `api/Data/Seed/*.json` on every start.
+- [ ] Validate protocol edits: rule/`showIf` fields must be question ids, operators and values must suit the question type, conditions may only reference earlier questions.
+
+## Patient loop
+- [ ] LLM: build a Slovenian eval set (about 20 notes with expected values, esp. calf pain, breathing, negations) and pick the cheapest model tier that gets every urgent case right.
+- [ ] AI summary for the patient profile (cached, regenerated on new data) and a staff profile endpoint (open flags, summary, trends).
+- [ ] Optional photo caption (text sent with a photo; it would need extraction too).
+- [ ] Review a single item / un-resolve a flag; escalation history on triage cards after resolve.
+- [ ] Decide whether one check-in per day should be enforced (several are allowed today).
+
+## Push notifications
+- [ ] Wire triggers: staff message, new patient-visible note, escalation, urgent flag (generic text only).
+- [ ] Poll receipts (`GetReceiptsAsync`), retry/backoff on 429/5xx, set `Expo:AccessToken`.
+
+## Recovery twin
+- [ ] In-app consent instead of the staff checkbox; auto-matching.
+
+## Dashboard
+- [ ] Trends for ordinal choices (feeling, progress) and booleans; zoom/range; compare two episodes.
+- [ ] Photos: overlay/side-by-side of two arbitrary dates, wound measurements.
+- [ ] Dashboard polish: remaining list views are plain tables.
+
+## Mobile (other repo, see `docs/`)
+- [ ] Conditional/multi-choice check-in flow with the safety stop (`docs/checkin-questions.md`).
+- [ ] Buddy screen with dynamic cheers and dictation (`docs/buddy.md`); push token registration; show medication/advice notes.
