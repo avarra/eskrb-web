@@ -31,6 +31,8 @@ Login code for medical staff
 esk_MjaRlQT6s2xdhDu8hlwSl3Ci0HWDoM1Mndn-6lTNurk
 ```
 
+Live domain [eskrb.home.sync.si](https://eskrb.home.sync.si)
+
 ## What it does
 
 **For patients (via the phone app, through this API)**
