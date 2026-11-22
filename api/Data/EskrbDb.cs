@@ -22,6 +22,7 @@ public class EskrbDb(DbContextOptions<EskrbDb> options) : DbContext(options)
     public DbSet<EpisodeNote> EpisodeNotes => Set<EpisodeNote>();
     public DbSet<Escalation> Escalations => Set<Escalation>();
     public DbSet<EpisodeReview> EpisodeReviews => Set<EpisodeReview>();
+    public DbSet<PushDevice> PushDevices => Set<PushDevice>();
     public DbSet<EpisodeReadState> EpisodeReadStates => Set<EpisodeReadState>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -81,6 +82,13 @@ public class EskrbDb(DbContextOptions<EskrbDb> options) : DbContext(options)
             r.HasOne(x => x.Episode).WithMany().HasForeignKey(x => x.EpisodeId);
             r.HasOne(x => x.Reviewer).WithMany().HasForeignKey(x => x.ReviewedBy);
             r.HasIndex(x => new { x.EpisodeId, x.CreatedAt });
+        });
+
+        b.Entity<PushDevice>(d =>
+        {
+            d.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId);
+            d.HasIndex(x => x.ExpoToken).IsUnique();
+            d.HasIndex(x => x.UserId);
         });
 
         b.Entity<EpisodeReadState>().HasKey(x => x.EpisodeId);

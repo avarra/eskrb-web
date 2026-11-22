@@ -38,6 +38,8 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["OpenAI:ApiKey"]))
     builder.Services.AddHttpClient<Eskrb.Api.Integrations.IExtractor, Eskrb.Api.Integrations.OpenAiExtractor>(c => c.Timeout = TimeSpan.FromSeconds(30));
 else
     builder.Services.AddScoped<Eskrb.Api.Integrations.IExtractor, Eskrb.Api.Integrations.NullExtractor>();
+// Push notifications (Expo). Only the admin screen sends for now; Notifications:Enabled=false is the kill switch.
+builder.Services.AddHttpClient<Eskrb.Api.Integrations.INotificationService, Eskrb.Api.Integrations.ExpoPushService>(c => c.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddHttpClient<Eskrb.Api.Integrations.ISttKeyIssuer, Eskrb.Api.Integrations.SonioxKeyIssuer>(c => c.Timeout = TimeSpan.FromSeconds(10));
 // Each key request costs money upstream: cap per patient (token bucket per user id).
 builder.Services.AddRateLimiter(o =>

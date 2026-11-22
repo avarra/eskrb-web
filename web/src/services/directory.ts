@@ -206,6 +206,19 @@ export interface Escalation {
   resolved: boolean
   resolvedAt: string | null
 }
+export interface PushUser {
+  userId: string
+  name: string
+  role: string
+  devices: { platform: 'ios' | 'android'; registeredAt: string }[]
+}
+export interface NotifyResult {
+  attempted: number
+  accepted: number
+  removed: number
+  disabled: boolean
+  ticketIds: string[]
+}
 export interface Message {
   id: string
   fromUserId: string
@@ -244,10 +257,17 @@ export const directory = {
 
   timeline: (episodeId: string) => api<TimelineItem[]>(`/episodes/${episodeId}/timeline`),
   reviews: (episodeId: string) => api<ReviewRow[]>(`/staff/episodes/${episodeId}/reviews`),
+  pushDevices: () => api<PushUser[]>('/admin/push-devices'),
   triage: () => api<Triage>('/staff/triage'),
   notes: (episodeId: string) => api<Note[]>(`/episodes/${episodeId}/notes`),
   escalations: (episodeId: string) => api<Escalation[]>(`/episodes/${episodeId}/escalations`),
   // --- writes ---
+  sendNotification: (b: {
+    audience: 'user' | 'patients' | 'staff'
+    userId?: string
+    title: string
+    body: string
+  }) => api<NotifyResult>('/admin/notifications', json('POST', b)),
   addNote: (episodeId: string, b: { kind: NoteKind; title?: string; body: string }) =>
     api<Note>(`/episodes/${episodeId}/notes`, json('POST', b)),
   updateNote: (

@@ -52,3 +52,7 @@ Live Swagger UI at `/`, OpenAPI JSON at `/openapi/v1.json`. Swagger's "Try it ou
 
 - `GET /me/episode` has `notes`: `[{id, kind: "medication"|"advice", title, body, createdAt, updatedAt}]` (private doctor notes are never sent). Show them to the patient (e.g. a "My instructions" screen).
 - When the episode has a `medication` note, `protocol.questions` also contains `medsTaken` (boolean, "Ali ste danes vzeli zdravila...?"). Render it like any boolean and send it in `answers`; "no" raises an attention flag. It disappears when staff remove the medication note, so always render the questions the API returns.
+
+## Push notifications (registration; an admin can already send manual pushes from the dashboard)
+
+After the app has its Expo push token, call `POST /me/push-token` with `{ "expoToken": "ExponentPushToken[...]", "platform": "ios" | "android", "deviceId": "<optional>" }` (bearer token, 204; safe to repeat on every app start). On sign-out call `DELETE /me/push-token` with `{ "expoToken": "..." }`. The backend pushes generic texts (e.g. "Imate novo sporočilo.") with `data: { kind, episodeId }`; open the right screen after the user is signed in.

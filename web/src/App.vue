@@ -23,6 +23,7 @@ function logout() {
           <RouterLink to="/groups">Doctor groups</RouterLink>
           <RouterLink to="/protocols">Protocols</RouterLink>
           <RouterLink v-if="auth.isAdmin" to="/users">Users</RouterLink>
+          <RouterLink v-if="auth.isAdmin" to="/notifications">Notifications</RouterLink>
         </template>
         <RouterLink v-else to="/">Home</RouterLink>
       </nav>

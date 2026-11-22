@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Eskrb.Api.Data;
 using Eskrb.Api.Domain;
 using Eskrb.Api.Integrations;
 using Microsoft.AspNetCore.Hosting;
@@ -16,6 +17,18 @@ public class FakeExtractor : IExtractor
     public Func<string, Dictionary<string, ExtractedValue>> Behavior { get; set; } = _ => [];
     public Task<Dictionary<string, ExtractedValue>> ExtractAsync(Protocol protocol, string text, CancellationToken ct) =>
         Task.FromResult(Behavior(text));
+}
+
+public class FakeNotifier : INotificationService
+{
+    public readonly List<(List<Guid> Users, PushMessage Message)> Sent = [];
+    public Task<NotifyResult> SendToUserAsync(Guid userId, PushMessage m, CancellationToken ct = default) => SendToUsersAsync([userId], m, ct);
+    public Task<NotifyResult> SendToUsersAsync(IEnumerable<Guid> userIds, PushMessage m, CancellationToken ct = default)
+    {
+        Sent.Add((userIds.ToList(), m));
+        return Task.FromResult(new NotifyResult(userIds.Count(), userIds.Count(), 0, false, []));
+    }
+    public Task<Dictionary<string, PushReceipt>> GetReceiptsAsync(IReadOnlyCollection<string> ids, CancellationToken ct = default) => Task.FromResult(new Dictionary<string, PushReceipt>());
 }
 
 public class FakeIssuer : ISttKeyIssuer
@@ -33,6 +46,7 @@ public class ApiFixture : WebApplicationFactory<Program>
     public readonly string Dir = Path.Combine(Path.GetTempPath(), "eskrb-tests-" + Guid.NewGuid().ToString("N"));
     public readonly FakeExtractor Extractor = new();
     public readonly FakeIssuer Issuer = new();
+    public readonly FakeNotifier Notifier = new();
 
     public ApiFixture()
     {
@@ -51,6 +65,8 @@ public class ApiFixture : WebApplicationFactory<Program>
         {
             s.RemoveAll<IExtractor>();
             s.AddSingleton<IExtractor>(Extractor);
+            s.RemoveAll<INotificationService>();
+            s.AddSingleton<INotificationService>(Notifier);
             s.RemoveAll<ISttKeyIssuer>();
             s.AddSingleton<ISttKeyIssuer>(Issuer);
         });
@@ -424,6 +440,62 @@ public class ApiTests(ApiFixture api) : IClassFixture<ApiFixture>
         var esc = await api.As("doctor").PostAsJsonAsync($"/episodes/{nina}/escalations", new { sourceType = "episode", sourceId = nina, comment = "Ne odziva se." });
         Assert.Equal(HttpStatusCode.Created, esc.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await api.As("doctor").PostAsJsonAsync($"/episodes/{nina}/escalations", new { sourceType = "episode", sourceId = Guid.NewGuid() })).StatusCode);
+    }
+
+    // ---------- push device registration ----------
+
+    [Fact]
+    public async Task Push_tokens_register_move_between_users_and_unregister()
+    {
+        const string token = "ExponentPushToken[test-device-1]";
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("ana").PostAsJsonAsync("/me/push-token", new { expoToken = "nope", platform = "ios" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("ana").PostAsJsonAsync("/me/push-token", new { expoToken = token, platform = "windows" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await api.CreateClient().PostAsJsonAsync("/me/push-token", new { expoToken = token, platform = "ios" })).StatusCode);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await api.As("ana").PostAsJsonAsync("/me/push-token", new { expoToken = token, platform = "ios", deviceId = "d1" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await api.As("ana").PostAsJsonAsync("/me/push-token", new { expoToken = token, platform = "ios" })).StatusCode); // idempotent
+        // same phone signs in as someone else: the token moves, it is never duplicated
+        Assert.Equal(HttpStatusCode.NoContent, (await api.As("marko").PostAsJsonAsync("/me/push-token", new { expoToken = token, platform = "ios" })).StatusCode);
+
+        using (var scope = api.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<EskrbDb>();
+            var row = Assert.Single(db.PushDevices.Where(d => d.ExpoToken == token).ToList());
+            Assert.Equal(Guid.Parse("00000000-0000-0000-0000-000000000002"), row.UserId);
+        }
+
+        // ana can't unregister marko's device; marko can
+        await api.As("ana").SendAsync(new HttpRequestMessage(HttpMethod.Delete, "/me/push-token") { Content = JsonContent.Create(new { expoToken = token }) });
+        using (var scope = api.Services.CreateScope())
+            Assert.Single(scope.ServiceProvider.GetRequiredService<EskrbDb>().PushDevices.Where(d => d.ExpoToken == token).ToList());
+        var del = await api.As("marko").SendAsync(new HttpRequestMessage(HttpMethod.Delete, "/me/push-token") { Content = JsonContent.Create(new { expoToken = token }) });
+        Assert.Equal(HttpStatusCode.NoContent, del.StatusCode);
+        using (var scope = api.Services.CreateScope())
+            Assert.Empty(scope.ServiceProvider.GetRequiredService<EskrbDb>().PushDevices.Where(d => d.ExpoToken == token).ToList());
+    }
+
+    [Fact]
+    public async Task Admin_can_list_devices_and_send_a_manual_notification()
+    {
+        await api.As("luka").PostAsJsonAsync("/me/push-token", new { expoToken = "ExponentPushToken[admin-list-1]", platform = "android" });
+        var list = await Body(await api.As("admin").GetAsync("/admin/push-devices"));
+        var luka = list.EnumerateArray().First(u => u.GetProperty("name").GetString() == "Luka Krajnc");
+        Assert.Equal("android", luka.GetProperty("devices")[0].GetProperty("platform").GetString());
+        Assert.DoesNotContain("ExponentPushToken", await (await api.As("admin").GetAsync("/admin/push-devices")).Content.ReadAsStringAsync());
+
+        var before = api.Notifier.Sent.Count;
+        var sent = await api.As("admin").PostAsJsonAsync("/admin/notifications", new { audience = "user", userId = "00000000-0000-0000-0000-000000000004", title = "Test", body = "Preizkus." });
+        Assert.Equal(HttpStatusCode.OK, sent.StatusCode);
+        Assert.Equal(before + 1, api.Notifier.Sent.Count);
+        Assert.Equal("Test", api.Notifier.Sent[^1].Message.Title);
+        var everyone = await api.As("admin").PostAsJsonAsync("/admin/notifications", new { audience = "patients", title = "T", body = "B" });
+        Assert.True((await Body(everyone)).GetProperty("attempted").GetInt32() >= 4);
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await api.As("doctor").PostAsJsonAsync("/admin/notifications", new { audience = "patients", title = "T", body = "B" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await api.As("ana").GetAsync("/admin/push-devices")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("admin").PostAsJsonAsync("/admin/notifications", new { audience = "everyone", title = "T", body = "B" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("admin").PostAsJsonAsync("/admin/notifications", new { audience = "user", userId = Guid.NewGuid(), title = "T", body = "B" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("admin").PostAsJsonAsync("/admin/notifications", new { audience = "patients", title = "", body = "B" })).StatusCode);
     }
 
     // ---------- photos ----------
