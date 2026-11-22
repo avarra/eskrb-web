@@ -2,13 +2,17 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AuthImage from '@/components/AuthImage.vue'
+import AppModal from '@/components/AppModal.vue'
 import EpisodeNotes from '@/components/EpisodeNotes.vue'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/services/api'
 import {
   directory,
+  reviewStatusLabel,
   type Escalation,
   type EpisodeRow,
+  type ReviewRow,
+  type ReviewStatus,
   type TimelineItem,
 } from '@/services/directory'
 
@@ -31,6 +35,7 @@ async function loadTimeline() {
   try {
     items.value = await directory.timeline(id)
     escalations.value = await directory.escalations(id)
+    reviews.value = await directory.reviews(id)
   } catch (e) {
     error.value = errorMessage(e)
   }
@@ -41,16 +46,17 @@ const reviewing = ref(false)
 
 // --- escalation: hand an item up to the next level of the group, with an optional comment ---
 const escalations = ref<Escalation[]>([])
-const escalating = ref<string | null>(null) // timeline item key being escalated
+const escalating = ref<{ kind: string; id: string } | null>(null) // item whose escalate modal is open
 const comment = ref('')
 const escalationsOf = (itemId: string) => escalations.value.filter((e) => e.sourceId === itemId)
 
-function startEscalate(i: TimelineItem) {
-  escalating.value = i.kind + i.id
+function startEscalate(i: { kind: string; id: string }) {
+  escalating.value = i
   comment.value = ''
 }
 
-async function escalate(i: TimelineItem) {
+async function escalate() {
+  const i = escalating.value!
   error.value = ''
   try {
     await directory.escalate(id, { sourceType: i.kind, sourceId: i.id, comment: comment.value })
@@ -70,11 +76,21 @@ async function resolve(e: Escalation) {
   }
 }
 
+// --- mark as reviewed: pick an outcome, optionally comment ---
+const reviews = ref<ReviewRow[]>([])
+const reviewOpen = ref(false)
+const reviewStatus = ref<ReviewStatus>('no_action')
+const reviewComment = ref('')
+const statuses = Object.entries(reviewStatusLabel) as [ReviewStatus, string][]
+
 async function review() {
   reviewing.value = true
   error.value = ''
   try {
-    await directory.review(id)
+    await directory.review(id, { status: reviewStatus.value, comment: reviewComment.value })
+    reviewOpen.value = false
+    reviewStatus.value = 'no_action'
+    reviewComment.value = ''
     await loadTimeline()
   } catch (e) {
     error.value = errorMessage(e)
@@ -123,9 +139,12 @@ onBeforeUnmount(() => clearInterval(timer))
         >
       </p>
     </div>
-    <button class="primary" :disabled="reviewing || !unreviewed" @click="review">
-      Mark as reviewed<template v-if="unreviewed"> ({{ unreviewed }})</template>
-    </button>
+    <div class="head-actions">
+      <button v-if="!auth.isAdmin" @click="startEscalate({ kind: 'episode', id })">Escalate</button>
+      <button class="primary" @click="reviewOpen = true">
+        Mark as reviewed<template v-if="unreviewed"> ({{ unreviewed }})</template>
+      </button>
+    </div>
   </header>
   <p v-if="error" class="error">{{ error }}</p>
 
@@ -136,6 +155,15 @@ onBeforeUnmount(() => clearInterval(timer))
     </label>
     <button class="primary" :disabled="sending || !body.trim()">Send</button>
   </form>
+
+  <section v-if="reviews.length" class="reviews">
+    <h2>Reviews</h2>
+    <div v-for="r in reviews" :key="r.id" class="review">
+      <span class="chip reviewed">{{ reviewStatusLabel[r.status] }}</span>
+      <span class="meta">{{ r.reviewerName }} &middot; {{ when(r.createdAt) }}</span>
+      <span v-if="r.comment">“{{ r.comment }}”</span>
+    </div>
+  </section>
 
   <EpisodeNotes :episode-id="id" />
 
@@ -193,18 +221,7 @@ onBeforeUnmount(() => clearInterval(timer))
       <button v-if="!e.resolved" class="small" @click="resolve(e)">Resolve</button>
     </div>
     <div v-if="!auth.isAdmin" class="escalate">
-      <button v-if="escalating !== i.kind + i.id" class="small" @click="startEscalate(i)">
-        Escalate
-      </button>
-      <form v-else class="esc-form" @submit.prevent="escalate(i)">
-        <input
-          v-model="comment"
-          maxlength="500"
-          placeholder="Comment for the senior doctor (optional)"
-        />
-        <button class="primary small">Escalate</button>
-        <button type="button" class="small" @click="escalating = null">Cancel</button>
-      </form>
+      <button class="small" @click="startEscalate(i)">Escalate</button>
     </div>
 
     <div v-for="f in i.flags ?? []" :key="f.id" class="flag">
@@ -216,9 +233,84 @@ onBeforeUnmount(() => clearInterval(timer))
     </div>
   </article>
   <p v-if="!items.length" class="meta">Nothing yet.</p>
+
+  <AppModal :open="!!escalating" title="Escalate to a senior doctor" @close="escalating = null">
+    <form class="modal-form" @submit.prevent="escalate">
+      <p class="meta">
+        This item moves to the next level above you in the group, into their needs attention.
+      </p>
+      <label>
+        Comment (optional)
+        <textarea v-model="comment" rows="3" maxlength="500" />
+      </label>
+      <p v-if="error" class="error">{{ error }}</p>
+      <div class="actions">
+        <button class="primary">Escalate</button>
+        <button type="button" @click="escalating = null">Cancel</button>
+      </div>
+    </form>
+  </AppModal>
+
+  <AppModal :open="reviewOpen" title="Mark as reviewed" @close="reviewOpen = false">
+    <form class="modal-form" @submit.prevent="review">
+      <p class="meta">
+        This marks all unreviewed check-ins and notes as reviewed and resolves their open flags.
+      </p>
+      <fieldset class="statuses">
+        <legend class="meta">Outcome</legend>
+        <label v-for="[value, label] in statuses" :key="value" class="radio">
+          <input v-model="reviewStatus" type="radio" :value="value" />
+          {{ label }}
+        </label>
+      </fieldset>
+      <label>
+        Comment (optional)
+        <textarea v-model="reviewComment" rows="3" maxlength="500" />
+      </label>
+      <p v-if="error" class="error">{{ error }}</p>
+      <div class="actions">
+        <button class="primary" :disabled="reviewing">Mark as reviewed</button>
+        <button type="button" @click="reviewOpen = false">Cancel</button>
+      </div>
+    </form>
+  </AppModal>
 </template>
 
 <style scoped>
+.head-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.reviews {
+  max-width: 860px;
+}
+.review {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.statuses {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.radio {
+  flex-direction: row !important;
+  align-items: center;
+  gap: var(--space-2) !important;
+  font: 400 15px/22px var(--font) !important;
+  color: var(--ink) !important;
+}
+.radio input {
+  min-height: 0;
+  accent-color: var(--ground);
+}
 .back {
   display: inline-block;
   margin-bottom: var(--space-3);

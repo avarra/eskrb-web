@@ -13,11 +13,14 @@ public record TriageEscalation(Guid Id, string SourceType, Guid SourceId, string
 public record TriageCard(
     Guid EpisodeId, Guid PatientId, string PatientName, string GroupName, string ProtocolName, int DayNumber,
     TriageFlag? TopFlag, int OpenFlags, bool MissedCheckIn, DateOnly? LastCheckInDate,
-    DateTime? LastMessageAt, bool LastMessageFromStaff, TriageEscalation? Escalation);
+    DateTime? LastMessageAt, bool LastMessageFromStaff, TriageEscalation? Escalation, TriageReview? LastReview);
 public record TriageDto(
     List<TriageCard> NeedsAttention, List<TriageCard> MissedCheckIn, List<TriageCard> AwaitingPatientReply,
     List<TriageCard> Stable, DateTime GeneratedAt);
+public record ReviewRequest(string? Status, string? Comment);
 public record ReviewResultDto(int CheckIns, int Logs, int FlagsResolved, int EscalationsResolved);
+public record ReviewDto(Guid Id, string Status, string? Comment, string ReviewerName, DateTime CreatedAt, int CheckIns, int Logs, int FlagsResolved);
+public record TriageReview(string Status, string? Comment, string ReviewerName, DateTime CreatedAt);
 
 [ApiController]
 [Authorize(Roles = "staff,admin")]
@@ -54,6 +57,9 @@ public class StaffController(EskrbDb db, IConfiguration config) : ControllerBase
             .Where(x => User.IsAdmin() || (myLevels.TryGetValue(episodes.First(e => e.Id == x.EpisodeId).DoctorGroupId, out var lv) && lv >= x.ToLevel))
             .GroupBy(x => x.EpisodeId).ToDictionary(g => g.Key, g => g.OrderBy(x => x.CreatedAt).First());
 
+        var lastReviews = (await db.EpisodeReviews.Include(r => r.Reviewer).Where(r => ids.Contains(r.EpisodeId)).ToListAsync(ct))
+            .GroupBy(r => r.EpisodeId).ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.CreatedAt).First());
+
         var cards = new List<(string Column, TriageCard Card)>();
         foreach (var e in episodes)
         {
@@ -70,7 +76,8 @@ public class StaffController(EskrbDb db, IConfiguration config) : ControllerBase
                 today.DayNumber - e.StartDate.DayNumber + 1,
                 top is null ? null : new TriageFlag(top.Id, top.RuleId, top.Severity, top.Quote, top.CreatedAt),
                 flags.Count, missed, dates.Count == 0 ? null : dates.Max(), last?.CreatedAt, fromStaff,
-                esc is null ? null : new TriageEscalation(esc.Id, esc.SourceType, esc.SourceId, esc.FromUser!.Name, esc.ToLevel, esc.Comment, esc.CreatedAt))));
+                esc is null ? null : new TriageEscalation(esc.Id, esc.SourceType, esc.SourceId, esc.FromUser!.Name, esc.ToLevel, esc.Comment, esc.CreatedAt),
+                lastReviews.TryGetValue(e.Id, out var rv) ? new TriageReview(rv.Status, rv.Comment, rv.Reviewer!.Name, rv.CreatedAt) : null)));
         }
 
         List<TriageCard> Col(string name, Func<IEnumerable<TriageCard>, IEnumerable<TriageCard>> order) =>
@@ -85,10 +92,16 @@ public class StaffController(EskrbDb db, IConfiguration config) : ControllerBase
             DateTime.UtcNow);
     }
 
-    /// <summary>Marks every unreviewed check-in and note of the episode as reviewed by the caller and resolves its open flags.</summary>
+    /// <summary>
+    /// Marks every unreviewed check-in and note of the episode as reviewed by the caller and resolves its open flags,
+    /// recording the outcome: body <c>{ status: no_action|monitor|contacted|referred, comment? }</c> (optional; default no_action).
+    /// </summary>
     [HttpPost("/staff/episodes/{id:guid}/review")]
-    public async Task<ActionResult<ReviewResultDto>> Review(Guid id, CancellationToken ct)
+    public async Task<ActionResult<ReviewResultDto>> Review(Guid id, ReviewRequest? req, CancellationToken ct)
     {
+        var status = req?.Status ?? ReviewStatuses.NoAction;
+        if (!ReviewStatuses.All.Contains(status)) return Problem(detail: $"status must be one of: {string.Join(", ", ReviewStatuses.All)}.", statusCode: 400);
+        if (req?.Comment is { Length: > 500 }) return Problem(detail: "comment is longer than 500 characters.", statusCode: 400);
         var episode = await db.VisibleEpisodes(User).FirstOrDefaultAsync(e => e.Id == id, ct);
         if (episode is null) return NotFound();
         var now = DateTime.UtcNow;
@@ -104,7 +117,23 @@ public class StaffController(EskrbDb db, IConfiguration config) : ControllerBase
         var level = User.IsAdmin() ? int.MaxValue : await EscalationsController.LevelInAsync(db, me, episode.DoctorGroupId, ct) ?? 0;
         var escs = (await db.Escalations.Where(x => x.EpisodeId == id && x.ResolvedAt == null).ToListAsync(ct)).Where(x => level >= x.ToLevel).ToList();
         foreach (var x in escs) { x.ResolvedAt = now; x.ResolvedBy = me; }
+        db.EpisodeReviews.Add(new EpisodeReview
+        {
+            Id = Guid.NewGuid(), EpisodeId = id, ReviewedBy = me, Status = status, CreatedAt = now,
+            Comment = string.IsNullOrWhiteSpace(req?.Comment) ? null : req!.Comment!.Trim(),
+            CheckIns = checkIns.Count, Logs = logs.Count, FlagsResolved = flags.Count,
+        });
         await db.SaveChangesAsync(ct);
         return new ReviewResultDto(checkIns.Count, logs.Count, flags.Count, escs.Count);
+    }
+
+    /// <summary>Review history of an episode (newest first).</summary>
+    [HttpGet("/staff/episodes/{id:guid}/reviews")]
+    public async Task<ActionResult<List<ReviewDto>>> Reviews(Guid id, CancellationToken ct)
+    {
+        if (!await db.VisibleEpisodes(User).AnyAsync(e => e.Id == id, ct)) return NotFound();
+        return (await db.EpisodeReviews.Include(r => r.Reviewer).Where(r => r.EpisodeId == id).ToListAsync(ct))
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => new ReviewDto(r.Id, r.Status, r.Comment, r.Reviewer!.Name, r.CreatedAt, r.CheckIns, r.Logs, r.FlagsResolved)).ToList();
     }
 }

@@ -9,7 +9,7 @@ public class Escalation
     public Guid Id { get; set; }
     public Guid EpisodeId { get; set; }
     public Episode? Episode { get; set; }
-    /// <summary>checkin | log | message</summary>
+    /// <summary>checkin | log | message | episode (the whole episode; SourceId = EpisodeId)</summary>
     public required string SourceType { get; set; }
     public Guid SourceId { get; set; }
     public Guid FromUserId { get; set; }

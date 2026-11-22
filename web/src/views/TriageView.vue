@@ -1,12 +1,38 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import AppModal from '@/components/AppModal.vue'
 import NoteForm from '@/components/NoteForm.vue'
 import { errorMessage } from '@/services/api'
-import { directory, type Triage, type TriageCard } from '@/services/directory'
+import { useAuthStore } from '@/stores/auth'
+import { directory, reviewStatusLabel, type Triage, type TriageCard } from '@/services/directory'
 
+const auth = useAuthStore()
 const triage = ref<Triage | null>(null)
+const escalating = ref<TriageCard | null>(null)
+const comment = ref('')
+
+function startEscalate(c: TriageCard) {
+  escalating.value = c
+  comment.value = ''
+}
+
+async function escalate() {
+  const c = escalating.value!
+  try {
+    await directory.escalate(c.episodeId, {
+      sourceType: 'episode',
+      sourceId: c.episodeId,
+      comment: comment.value,
+    })
+    escalating.value = null
+    comment.value = ''
+    await load()
+  } catch (e) {
+    error.value = errorMessage(e)
+  }
+}
 const error = ref('')
-const noting = ref<string | null>(null) // episode id with the quick-note form open
+const noting = ref<TriageCard | null>(null) // card whose quick-note modal is open
 let timer: ReturnType<typeof setInterval> | undefined
 
 const columns = computed(() => {
@@ -101,28 +127,71 @@ onBeforeUnmount(() => clearInterval(timer))
           <span class="meta">by {{ c.escalation.fromName }}</span>
           <blockquote v-if="c.escalation.comment">“{{ c.escalation.comment }}”</blockquote>
         </div>
+        <div v-if="c.lastReview" class="meta reviewed-line">
+          <span class="chip reviewed">{{ reviewStatusLabel[c.lastReview.status] }}</span>
+          {{ c.lastReview.reviewerName
+          }}<template v-if="c.lastReview.comment">: “{{ c.lastReview.comment }}”</template>
+        </div>
         <div class="meta">{{ lastCheckIn(c) }}</div>
         <div class="quick">
           <RouterLink :to="{ name: 'episode', params: { id: c.episodeId } }">Open</RouterLink>
-          <button class="small" @click="noting = noting === c.episodeId ? null : c.episodeId">
-            {{ noting === c.episodeId ? 'Close' : 'Add note' }}
-          </button>
+          <span class="btns">
+            <button v-if="!auth.isAdmin" class="small" @click="startEscalate(c)">Escalate</button>
+            <button class="small" @click="noting = c">Add note</button>
+          </span>
         </div>
-        <NoteForm
-          v-if="noting === c.episodeId"
-          :episode-id="c.episodeId"
-          compact
-          @saved="noting = null"
-          @cancel="noting = null"
-        />
       </article>
 
       <p v-if="!col.cards.length" class="meta empty">No one here.</p>
     </section>
   </div>
+
+  <AppModal
+    :open="!!noting"
+    :title="`Add note: ${noting?.patientName ?? ''}`"
+    @close="noting = null"
+  >
+    <NoteForm
+      v-if="noting"
+      :episode-id="noting.episodeId"
+      @saved="noting = null"
+      @cancel="noting = null"
+    />
+  </AppModal>
+
+  <AppModal
+    :open="!!escalating"
+    :title="`Escalate: ${escalating?.patientName ?? ''}`"
+    @close="escalating = null"
+  >
+    <form class="modal-form" @submit.prevent="escalate">
+      <p class="meta">
+        The whole episode moves to the next level above you in the group, into their needs
+        attention.
+      </p>
+      <label>
+        Comment (optional)
+        <textarea v-model="comment" rows="3" maxlength="500" />
+      </label>
+      <div class="actions">
+        <button class="primary">Escalate</button>
+        <button type="button" @click="escalating = null">Cancel</button>
+      </div>
+    </form>
+  </AppModal>
 </template>
 
 <style scoped>
+.btns {
+  display: flex;
+  gap: var(--space-2);
+}
+.reviewed-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
 .board {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

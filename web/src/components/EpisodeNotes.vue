@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import AppModal from '@/components/AppModal.vue'
 import NoteForm from '@/components/NoteForm.vue'
 import { errorMessage } from '@/services/api'
 import { directory, type Note, type NoteKind } from '@/services/directory'
@@ -8,7 +9,7 @@ const props = defineProps<{ episodeId: string }>()
 
 const notes = ref<Note[]>([])
 const adding = ref(false)
-const editing = ref<string | null>(null)
+const editing = ref<Note | null>(null)
 const error = ref('')
 
 const groups: { kind: NoteKind; title: string; hint: string }[] = [
@@ -52,39 +53,40 @@ onMounted(load)
   <section class="notes">
     <header>
       <h2>Notes</h2>
-      <button v-if="!adding" @click="adding = true">Add note</button>
+      <button class="primary" @click="adding = true">Add note</button>
     </header>
     <p v-if="error" class="error">{{ error }}</p>
-    <div v-if="adding" class="panel">
-      <NoteForm :episode-id="episodeId" @saved="saved" @cancel="adding = false" />
-    </div>
 
     <template v-for="g in groups" :key="g.kind">
       <div v-if="byKind[g.kind]!.length" class="group">
         <h3>{{ g.title }}</h3>
         <p class="meta">{{ g.hint }}</p>
         <div v-for="n in byKind[g.kind]" :key="n.id" class="note" :class="g.kind">
-          <NoteForm
-            v-if="editing === n.id"
-            :episode-id="episodeId"
-            :note="n"
-            @saved="saved"
-            @cancel="editing = null"
-          />
-          <template v-else>
-            <strong v-if="n.title">{{ n.title }}</strong>
-            <p class="body">{{ n.body }}</p>
-            <div class="meta actions">
-              <span>Updated {{ new Date(n.updatedAt + 'Z').toLocaleString() }}</span>
-              <button @click="editing = n.id">Edit</button>
-              <button @click="remove(n)">Delete</button>
-            </div>
-          </template>
+          <strong v-if="n.title">{{ n.title }}</strong>
+          <p class="body">{{ n.body }}</p>
+          <div class="meta actions">
+            <span>Updated {{ new Date(n.updatedAt + 'Z').toLocaleString() }}</span>
+            <button @click="editing = n">Edit</button>
+            <button @click="remove(n)">Delete</button>
+          </div>
         </div>
       </div>
     </template>
-    <p v-if="!notes.length && !adding" class="meta">No notes yet.</p>
+    <p v-if="!notes.length" class="meta">No notes yet.</p>
   </section>
+
+  <AppModal :open="adding" title="Add note" @close="adding = false">
+    <NoteForm :episode-id="episodeId" @saved="saved" @cancel="adding = false" />
+  </AppModal>
+  <AppModal :open="!!editing" title="Edit note" @close="editing = null">
+    <NoteForm
+      v-if="editing"
+      :episode-id="episodeId"
+      :note="editing"
+      @saved="saved"
+      @cancel="editing = null"
+    />
+  </AppModal>
 </template>
 
 <style scoped>

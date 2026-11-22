@@ -150,6 +150,12 @@ export interface TriageCard {
     comment: string | null
     createdAt: string
   } | null
+  lastReview: {
+    status: ReviewStatus
+    comment: string | null
+    reviewerName: string
+    createdAt: string
+  } | null
 }
 export interface Triage {
   needsAttention: TriageCard[]
@@ -157,6 +163,23 @@ export interface Triage {
   awaitingPatientReply: TriageCard[]
   stable: TriageCard[]
   generatedAt: string
+}
+export type ReviewStatus = 'no_action' | 'monitor' | 'contacted' | 'referred'
+export const reviewStatusLabel: Record<ReviewStatus, string> = {
+  no_action: 'No action needed',
+  monitor: 'Keep monitoring',
+  contacted: 'Contacted the patient',
+  referred: 'Referred / needs a visit',
+}
+export interface ReviewRow {
+  id: string
+  status: ReviewStatus
+  comment: string | null
+  reviewerName: string
+  createdAt: string
+  checkIns: number
+  logs: number
+  flagsResolved: number
 }
 export interface ReviewResult {
   checkIns: number
@@ -220,6 +243,7 @@ export const directory = {
   },
 
   timeline: (episodeId: string) => api<TimelineItem[]>(`/episodes/${episodeId}/timeline`),
+  reviews: (episodeId: string) => api<ReviewRow[]>(`/staff/episodes/${episodeId}/reviews`),
   triage: () => api<Triage>('/staff/triage'),
   notes: (episodeId: string) => api<Note[]>(`/episodes/${episodeId}/notes`),
   escalations: (episodeId: string) => api<Escalation[]>(`/episodes/${episodeId}/escalations`),
@@ -237,8 +261,8 @@ export const directory = {
     api<Escalation>(`/episodes/${episodeId}/escalations`, json('POST', b)),
   resolveEscalation: (episodeId: string, id: string) =>
     api<Escalation>(`/episodes/${episodeId}/escalations/${id}/resolve`, json('POST')),
-  review: (episodeId: string) =>
-    api<ReviewResult>(`/staff/episodes/${episodeId}/review`, json('POST')),
+  review: (episodeId: string, b: { status: ReviewStatus; comment?: string }) =>
+    api<ReviewResult>(`/staff/episodes/${episodeId}/review`, json('POST', b)),
   sendMessage: (episodeId: string, body: string) =>
     api<Message>(`/episodes/${episodeId}/messages`, json('POST', { body })),
   createEpisode: (b: NewEpisode) => api<EpisodeRow>('/episodes', json('POST', b)),

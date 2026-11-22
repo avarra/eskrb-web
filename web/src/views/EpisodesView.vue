@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import AppModal from '@/components/AppModal.vue'
 import { errorMessage } from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -29,6 +30,8 @@ const q = (k: keyof EpisodeFilter) => (route.query[k] as string | undefined) ?? 
 
 // per-row date editing, keyed by episode id
 const dates = ref<Record<string, { startDate: string; endDate: string }>>({})
+const creating = ref(false)
+const editing = ref<EpisodeRow | null>(null)
 const draft = ref({ patientId: '', protocolId: '', doctorGroupId: '', startDate: '' })
 
 async function load() {
@@ -66,13 +69,21 @@ const create = () =>
       startDate: draft.value.startDate || undefined,
     })
     draft.value = { patientId: '', protocolId: '', doctorGroupId: '', startDate: '' }
+    creating.value = false
     if (auth.isAdmin) patients.value = await directory.patients()
   })
 
-const changed = (e: EpisodeRow) =>
-  dates.value[e.id]?.startDate !== e.startDate || dates.value[e.id]?.endDate !== e.endDate
+const edit = (e: EpisodeRow) => {
+  dates.value[e.id] = { startDate: e.startDate, endDate: e.endDate }
+  editing.value = e
+}
 
-const saveDates = (e: EpisodeRow) => run(() => directory.updateEpisode(e.id, dates.value[e.id]!))
+const saveDates = () =>
+  run(async () => {
+    const e = editing.value!
+    await directory.updateEpisode(e.id, dates.value[e.id]!)
+    editing.value = null
+  })
 
 const end = (e: EpisodeRow) =>
   confirm(`End ${e.patient.name}'s episode now? Check-ins stop immediately.`) &&
@@ -92,42 +103,11 @@ watch(() => route.query, load)
 </script>
 
 <template>
-  <h1>Episodes</h1>
+  <header class="page-head">
+    <h1>Episodes</h1>
+    <button v-if="auth.isAdmin" class="primary" @click="creating = true">New episode</button>
+  </header>
   <p v-if="error" class="error">{{ error }}</p>
-
-  <form v-if="auth.isAdmin" class="filters" @submit.prevent="create">
-    <label>
-      New episode: patient
-      <select v-model="draft.patientId">
-        <option value="">select…</option>
-        <option v-for="p in patients" :key="p.id" :value="p.id">{{ p.name }}</option>
-      </select>
-    </label>
-    <label>
-      Protocol
-      <select v-model="draft.protocolId">
-        <option value="">select…</option>
-        <option v-for="p in protocols" :key="p.id" :value="p.id">{{ p.name }}</option>
-      </select>
-    </label>
-    <label>
-      Group
-      <select v-model="draft.doctorGroupId">
-        <option value="">select…</option>
-        <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }}</option>
-      </select>
-    </label>
-    <label>
-      Start (default today)
-      <input v-model="draft.startDate" type="date" />
-    </label>
-    <button
-      class="primary"
-      :disabled="!draft.patientId || !draft.protocolId || !draft.doctorGroupId"
-    >
-      Create
-    </button>
-  </form>
 
   <div class="filters">
     <label>
@@ -188,10 +168,10 @@ watch(() => route.query, load)
         </td>
         <td>{{ e.status }}</td>
         <td>{{ e.status === 'upcoming' ? '' : e.dayNumber }}</td>
-        <td><input v-model="dates[e.id]!.startDate" type="date" /></td>
-        <td><input v-model="dates[e.id]!.endDate" type="date" /></td>
+        <td>{{ e.startDate }}</td>
+        <td>{{ e.endDate }}</td>
         <td>
-          <button :disabled="!changed(e)" @click="saveDates(e)">Save dates</button>
+          <button @click="edit(e)">Edit dates</button>
           <button :disabled="e.status === 'ended'" @click="end(e)">End now</button>
         </td>
       </tr>
@@ -200,4 +180,66 @@ watch(() => route.query, load)
       </tr>
     </tbody>
   </table>
+
+  <AppModal :open="creating" title="New episode" @close="creating = false">
+    <form class="modal-form" @submit.prevent="create">
+      <label>
+        Patient
+        <select v-model="draft.patientId">
+          <option value="">select…</option>
+          <option v-for="p in patients" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
+      </label>
+      <label>
+        Protocol
+        <select v-model="draft.protocolId">
+          <option value="">select…</option>
+          <option v-for="p in protocols" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
+      </label>
+      <label>
+        Doctor group
+        <select v-model="draft.doctorGroupId">
+          <option value="">select…</option>
+          <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }}</option>
+        </select>
+      </label>
+      <label>
+        Start date (default today)
+        <input v-model="draft.startDate" type="date" />
+      </label>
+      <p v-if="error" class="error">{{ error }}</p>
+      <div class="actions">
+        <button
+          class="primary"
+          :disabled="!draft.patientId || !draft.protocolId || !draft.doctorGroupId"
+        >
+          Create episode
+        </button>
+        <button type="button" @click="creating = false">Cancel</button>
+      </div>
+    </form>
+  </AppModal>
+
+  <AppModal
+    :open="!!editing"
+    :title="`Edit dates: ${editing?.patient.name ?? ''}`"
+    @close="editing = null"
+  >
+    <form v-if="editing" class="modal-form" @submit.prevent="saveDates">
+      <label>
+        Start
+        <input v-model="dates[editing.id]!.startDate" type="date" />
+      </label>
+      <label>
+        End
+        <input v-model="dates[editing.id]!.endDate" type="date" />
+      </label>
+      <p v-if="error" class="error">{{ error }}</p>
+      <div class="actions">
+        <button class="primary">Save dates</button>
+        <button type="button" @click="editing = null">Cancel</button>
+      </div>
+    </form>
+  </AppModal>
 </template>

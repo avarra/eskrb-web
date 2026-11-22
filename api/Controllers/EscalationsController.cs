@@ -20,7 +20,7 @@ public record EscalationDto(
 [Authorize(Roles = "staff,admin")]
 public class EscalationsController(EskrbDb db) : ControllerBase
 {
-    private static readonly string[] SourceTypes = ["checkin", "log", "message"];
+    private static readonly string[] SourceTypes = ["checkin", "log", "message", "episode"];
 
     public static EscalationDto ToDto(Escalation e) => new(
         e.Id, e.SourceType, e.SourceId, e.FromUser?.Name ?? "", e.ToLevel, e.Comment, e.CreatedAt, e.ResolvedAt != null, e.ResolvedAt);
@@ -54,7 +54,8 @@ public class EscalationsController(EskrbDb db) : ControllerBase
         {
             "checkin" => await db.CheckIns.AnyAsync(c => c.Id == req.SourceId && c.EpisodeId == id, ct),
             "log" => await db.Logs.AnyAsync(l => l.Id == req.SourceId && l.EpisodeId == id, ct),
-            _ => await db.Messages.AnyAsync(m => m.Id == req.SourceId && m.EpisodeId == id, ct),
+            "message" => await db.Messages.AnyAsync(m => m.Id == req.SourceId && m.EpisodeId == id, ct),
+            _ => req.SourceId == id, // "episode": the whole episode (sourceId = the episode id)
         };
         if (!exists) return Problem(detail: "That item does not belong to this episode.", statusCode: 404);
 

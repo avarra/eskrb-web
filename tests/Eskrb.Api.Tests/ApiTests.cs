@@ -402,6 +402,30 @@ public class ApiTests(ApiFixture api) : IClassFixture<ApiFixture>
         Assert.Equal(HttpStatusCode.BadRequest, (await api.As("doctor").PostAsJsonAsync($"/episodes/{AnaEpisode}/escalations", new { sourceType = "x", sourceId = Guid.NewGuid() })).StatusCode);
     }
 
+    [Fact]
+    public async Task Review_records_a_status_and_comment_and_whole_episodes_can_be_escalated()
+    {
+        const string nina = "00000000-0000-0000-0000-00000000e003";
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("doctor").PostAsJsonAsync($"/staff/episodes/{nina}/review", new { status = "nonsense" })).StatusCode);
+        var ok = await api.As("doctor").PostAsJsonAsync($"/staff/episodes/{nina}/review", new { status = "contacted", comment = "Poklical sem jo." });
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+
+        var history = await Body(await api.As("doctor").GetAsync($"/staff/episodes/{nina}/reviews"));
+        Assert.Equal("contacted", history[0].GetProperty("status").GetString());
+        Assert.Equal("Poklical sem jo.", history[0].GetProperty("comment").GetString());
+        Assert.Equal("Dr. Maja Zupan", history[0].GetProperty("reviewerName").GetString());
+
+        var card = (await Body(await api.As("doctor").GetAsync("/staff/triage"))).EnumerateObject()
+            .Where(c => c.Value.ValueKind == JsonValueKind.Array).SelectMany(c => c.Value.EnumerateArray())
+            .First(c => c.GetProperty("patientName").GetString() == "Nina Kovač");
+        Assert.Equal("contacted", card.GetProperty("lastReview").GetProperty("status").GetString());
+
+        // a whole episode can be escalated (sourceId = the episode id)
+        var esc = await api.As("doctor").PostAsJsonAsync($"/episodes/{nina}/escalations", new { sourceType = "episode", sourceId = nina, comment = "Ne odziva se." });
+        Assert.Equal(HttpStatusCode.Created, esc.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await api.As("doctor").PostAsJsonAsync($"/episodes/{nina}/escalations", new { sourceType = "episode", sourceId = Guid.NewGuid() })).StatusCode);
+    }
+
     // ---------- photos ----------
 
     [Fact]

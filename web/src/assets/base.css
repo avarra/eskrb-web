@@ -246,3 +246,37 @@ tbody tr:hover {
   display: inline-block;
   flex: none;
 }
+
+/* ---------- page header + modal forms ---------- */
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.modal-form label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.modal-form textarea {
+  width: 100%;
+}
+.modal-form p {
+  margin: 0;
+}
+.actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+button.small {
+  min-height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+}
