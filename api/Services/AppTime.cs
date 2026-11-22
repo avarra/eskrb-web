@@ -11,6 +11,9 @@ public static class AppTime
     public static DateTime AtLocal(DateOnly day, int hour) =>
         TimeZoneInfo.ConvertTimeToUtc(day.ToDateTime(new TimeOnly(hour, 0)), Zone);
 
+    public static DateOnly ToLocalDate(DateTime utc) =>
+        DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), Zone));
+
     public static DateOnly Today =>
         DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Zone));
 }

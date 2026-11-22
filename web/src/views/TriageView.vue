@@ -128,7 +128,9 @@ onBeforeUnmount(() => clearInterval(timer))
           <blockquote v-if="c.escalation.comment">“{{ c.escalation.comment }}”</blockquote>
         </div>
         <div v-if="c.lastReview" class="meta reviewed-line">
-          <span class="chip reviewed">{{ reviewStatusLabel[c.lastReview.status] }}</span>
+          <span class="chip" :class="`o-${c.lastReview.status}`">{{
+            reviewStatusLabel[c.lastReview.status]
+          }}</span>
           {{ c.lastReview.reviewerName
           }}<template v-if="c.lastReview.comment">: “{{ c.lastReview.comment }}”</template>
         </div>

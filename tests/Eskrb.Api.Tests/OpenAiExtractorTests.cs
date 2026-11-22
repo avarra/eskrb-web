@@ -57,4 +57,20 @@ public class OpenAiExtractorTests
         Assert.Empty(OpenAiExtractor.Parse(J(refusal), Questions));
         Assert.Throws<InvalidOperationException>(() => OpenAiExtractor.Parse(J("""{"status":"incomplete","output":[]}"""), Questions));
     }
+
+    [Fact]
+    public void Multichoice_questions_become_an_array_of_enum_values_with_labels_in_the_description()
+    {
+        var q = new ProtocolQuestion
+        {
+            Id = "symptoms", Type = "multichoice", Text = "Simptomi?", Options = ["fever", "none"],
+            Labels = new() { ["fever"] = "Vročina", ["none"] = "Nič od naštetega" }, ExclusiveOptions = ["none"],
+        };
+        var req = OpenAiExtractor.BuildRequest("m", "low", [q], "note");
+        var prop = req["text"]!["format"]!["schema"]!["properties"]!["symptoms"]!;
+        var value = prop["anyOf"]![0]!["properties"]!["value"]!;
+        Assert.Equal("array", (string?)value["type"]);
+        Assert.Equal(["fever", "none"], value["items"]!["enum"]!.AsArray().Select(x => (string?)x).ToArray());
+        Assert.Contains("fever = Vročina", (string?)prop["description"]);
+    }
 }

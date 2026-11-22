@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AuthImage from '@/components/AuthImage.vue'
 import AppModal from '@/components/AppModal.vue'
+import EpisodeCharts from '@/components/EpisodeCharts.vue'
+import PhotoTimeline from '@/components/PhotoTimeline.vue'
 import EpisodeNotes from '@/components/EpisodeNotes.vue'
 import { useAuthStore } from '@/stores/auth'
 import { errorMessage } from '@/services/api'
@@ -10,6 +12,9 @@ import {
   directory,
   reviewStatusLabel,
   type Escalation,
+  type EpisodeCharts as ChartsData,
+  type PhotoSeries,
+  type ProtocolQuestion,
   type EpisodeRow,
   type ReviewRow,
   type ReviewStatus,
@@ -22,6 +27,8 @@ const id = route.params.id as string
 
 const episode = ref<EpisodeRow | null>(null)
 const items = ref<TimelineItem[]>([])
+const photoSeries = ref<PhotoSeries[]>([])
+const charts = ref<ChartsData | null>(null)
 const body = ref('')
 const error = ref('')
 const sending = ref(false)
@@ -31,11 +38,29 @@ const when = (iso: string) => new Date(iso.endsWith('Z') ? iso : iso + 'Z').toLo
 const isPhoto = (v: unknown) => typeof v === 'string' && v.startsWith('/media/')
 const show = (v: unknown) => (typeof v === 'object' ? JSON.stringify(v) : String(v))
 
+// Answers are shown with the protocol's question text and option labels (multichoice answers are arrays of option ids).
+const questions = ref<Record<string, ProtocolQuestion>>({})
+const qText = (k: string | number) => questions.value[String(k)]?.text ?? String(k)
+function fmt(k: string | number, v: unknown): string {
+  const q = questions.value[String(k)]
+  const one = (x: unknown) =>
+    typeof x === 'boolean'
+      ? x
+        ? 'Yes'
+        : 'No'
+      : typeof x === 'string'
+        ? (q?.labels?.[x] ?? x)
+        : show(x)
+  return Array.isArray(v) ? v.map(one).join(', ') : one(v)
+}
+
 async function loadTimeline() {
   try {
     items.value = await directory.timeline(id)
     escalations.value = await directory.escalations(id)
     reviews.value = await directory.reviews(id)
+    photoSeries.value = await directory.photos(id)
+    charts.value = await directory.charts(id)
   } catch (e) {
     error.value = errorMessage(e)
   }
@@ -79,17 +104,21 @@ async function resolve(e: Escalation) {
 // --- mark as reviewed: pick an outcome, optionally comment ---
 const reviews = ref<ReviewRow[]>([])
 const reviewOpen = ref(false)
-const reviewStatus = ref<ReviewStatus>('no_action')
 const reviewComment = ref('')
 const statuses = Object.entries(reviewStatusLabel) as [ReviewStatus, string][]
+const statusHint: Record<ReviewStatus, string> = {
+  no_action: 'Nothing more to do',
+  monitor: 'Check again later',
+  contacted: 'Reached out to them',
+  referred: 'Needs a visit or a doctor',
+}
 
-async function review() {
+async function review(status: ReviewStatus) {
   reviewing.value = true
   error.value = ''
   try {
-    await directory.review(id, { status: reviewStatus.value, comment: reviewComment.value })
+    await directory.review(id, { status, comment: reviewComment.value })
     reviewOpen.value = false
-    reviewStatus.value = 'no_action'
     reviewComment.value = ''
     await loadTimeline()
   } catch (e) {
@@ -121,6 +150,10 @@ async function send() {
 
 onMounted(async () => {
   episode.value = (await directory.episodes()).find((e) => e.id === id) ?? null
+  if (episode.value)
+    questions.value = Object.fromEntries(
+      (await directory.protocol(episode.value.protocol.id)).questions.map((q) => [q.id, q]),
+    )
   await loadTimeline()
   timer = setInterval(loadTimeline, 10000) // simple polling; no websockets in v0
 })
@@ -159,11 +192,20 @@ onBeforeUnmount(() => clearInterval(timer))
   <section v-if="reviews.length" class="reviews">
     <h2>Reviews</h2>
     <div v-for="r in reviews" :key="r.id" class="review">
-      <span class="chip reviewed">{{ reviewStatusLabel[r.status] }}</span>
+      <span class="chip" :class="`o-${r.status}`">{{ reviewStatusLabel[r.status] }}</span>
       <span class="meta">{{ r.reviewerName }} &middot; {{ when(r.createdAt) }}</span>
       <span v-if="r.comment">“{{ r.comment }}”</span>
     </div>
   </section>
+
+  <EpisodeCharts v-if="charts" :data="charts" />
+
+  <PhotoTimeline
+    v-if="episode && photoSeries.length"
+    :series="photoSeries"
+    :start-date="episode.startDate"
+    :day-number="Math.max(1, episode.dayNumber)"
+  />
 
   <EpisodeNotes :episode-id="id" />
 
@@ -193,13 +235,13 @@ onBeforeUnmount(() => clearInterval(timer))
 
     <dl v-if="i.kind === 'checkin' && i.answers" class="answers">
       <template v-for="(v, k) in i.answers" :key="k">
-        <dt>{{ k }}</dt>
+        <dt>{{ qText(k) }}</dt>
         <dd>
           <AuthImage v-if="isPhoto(v)" :path="v as string" />
           <span v-else-if="k === 'pain'" class="chip" :class="painClass(v)"
             >{{ show(v) }} / 10</span
           >
-          <template v-else>{{ show(v) }}</template>
+          <template v-else>{{ fmt(k, v) }}</template>
         </dd>
       </template>
     </dl>
@@ -208,8 +250,9 @@ onBeforeUnmount(() => clearInterval(timer))
     <p v-if="i.kind === 'log' && i.extracted && Object.keys(i.extracted).length" class="meta">
       Extracted:
       <span v-for="(v, k) in i.extracted" :key="k" class="ext">
-        {{ k }} <span v-if="k === 'pain'" class="chip" :class="painClass(v)">{{ show(v) }}</span
-        ><template v-else>{{ show(v) }}</template>
+        {{ qText(k) }}
+        <span v-if="k === 'pain'" class="chip" :class="painClass(v)">{{ show(v) }}</span
+        ><template v-else>{{ fmt(k, v) }}</template>
       </span>
     </p>
     <p v-if="i.kind === 'message'" class="quote">{{ i.body }}</p>
@@ -252,27 +295,34 @@ onBeforeUnmount(() => clearInterval(timer))
   </AppModal>
 
   <AppModal :open="reviewOpen" title="Mark as reviewed" @close="reviewOpen = false">
-    <form class="modal-form" @submit.prevent="review">
+    <div class="modal-form">
       <p class="meta">
         This marks all unreviewed check-ins and notes as reviewed and resolves their open flags.
+        Pick the outcome to finish.
       </p>
-      <fieldset class="statuses">
-        <legend class="meta">Outcome</legend>
-        <label v-for="[value, label] in statuses" :key="value" class="radio">
-          <input v-model="reviewStatus" type="radio" :value="value" />
-          {{ label }}
-        </label>
-      </fieldset>
       <label>
         Comment (optional)
         <textarea v-model="reviewComment" rows="3" maxlength="500" />
       </label>
       <p v-if="error" class="error">{{ error }}</p>
+      <div class="choices">
+        <button
+          v-for="[value, label] in statuses"
+          :key="value"
+          type="button"
+          class="choice"
+          :class="`o-${value}`"
+          :disabled="reviewing"
+          @click="review(value)"
+        >
+          <span class="label">{{ label }}</span>
+          <span class="hint">{{ statusHint[value] }}</span>
+        </button>
+      </div>
       <div class="actions">
-        <button class="primary" :disabled="reviewing">Mark as reviewed</button>
         <button type="button" @click="reviewOpen = false">Cancel</button>
       </div>
-    </form>
+    </div>
   </AppModal>
 </template>
 
@@ -292,24 +342,39 @@ onBeforeUnmount(() => clearInterval(timer))
   padding: 6px 0;
   border-bottom: 1px solid var(--hairline);
 }
-.statuses {
-  border: 0;
-  padding: 0;
-  margin: 0;
+.choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.choice {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 80px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: 20px;
+  text-align: left;
+  background: var(--o-bg);
+  border: 1px solid color-mix(in srgb, var(--o-line) 28%, transparent);
+  color: var(--o-ink);
 }
-.radio {
-  flex-direction: row !important;
-  align-items: center;
-  gap: var(--space-2) !important;
-  font: 400 15px/22px var(--font) !important;
-  color: var(--ink) !important;
+.choice .label {
+  font: 600 17px/22px var(--font);
 }
-.radio input {
-  min-height: 0;
-  accent-color: var(--ground);
+.choice .hint {
+  font: 400 13px/18px var(--font);
+  opacity: 0.85;
+}
+.choice:hover:not(:disabled) {
+  background: var(--o-solid);
+  color: var(--o-solid-ink);
+}
+@media (max-width: 520px) {
+  .choices {
+    grid-template-columns: 1fr;
+  }
 }
 .back {
   display: inline-block;

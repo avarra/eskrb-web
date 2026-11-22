@@ -3,22 +3,491 @@
   "name": "Knee replacement",
   "durationDays": 42,
   "questions": [
-    { "id": "pain", "type": "scale", "min": 0, "max": 10, "text": "Kako močna je bolečina v kolenu?" },
-    { "id": "temperature", "type": "number", "unit": "°C", "text": "Kakšna je vaša telesna temperatura?" },
-    { "id": "swelling", "type": "choice", "options": ["less", "same", "more"], "text": "Kakšna je oteklina v primerjavi z včeraj?" },
-    { "id": "wound", "type": "choice", "options": ["dry", "red", "discharge"], "text": "Kakšna je rana?" },
-    { "id": "calfPain", "type": "boolean", "text": "Ali čutite bolečino ali oteklino v mečih?" },
-    { "id": "breathing", "type": "boolean", "text": "Ali težko dihate ali čutite bolečino v prsih?" },
-    { "id": "walking", "type": "boolean", "text": "Ali ste danes hodili z berglami?" },
-    { "id": "woundPhoto", "type": "photo", "text": "Slikajte rano." },
-    { "id": "notes", "type": "text", "text": "Želite še kaj dodati? (neobvezno)" },
-    { "id": "wellbeing", "type": "scale", "min": 1, "max": 5, "text": "Kako se danes počutite?" }
+    {
+      "id": "feeling",
+      "type": "choice",
+      "text": "Kako se danes počutite?",
+      "options": [
+        "very_bad",
+        "bad",
+        "ok",
+        "good",
+        "great"
+      ],
+      "labels": {
+        "very_bad": "😣 Zelo slabo",
+        "bad": "😟 Slabo",
+        "ok": "😐 V redu",
+        "good": "🙂 Dobro",
+        "great": "😄 Odlično"
+      },
+      "skipExtraction": true
+    },
+    {
+      "id": "feelingCause",
+      "type": "choice",
+      "text": "Kaj najbolj vpliva na vaše počutje?",
+      "options": [
+        "pain",
+        "fatigue",
+        "sleep",
+        "fear",
+        "other"
+      ],
+      "labels": {
+        "pain": "Bolečina",
+        "fatigue": "Utrujenost",
+        "sleep": "Slabo spanje",
+        "fear": "Strah ali negotovost",
+        "other": "Drugo"
+      },
+      "showIf": {
+        "question": "feeling",
+        "op": "in",
+        "value": [
+          "bad",
+          "very_bad"
+        ]
+      },
+      "skipExtraction": true
+    },
+    {
+      "id": "progress",
+      "type": "choice",
+      "text": "Kako poteka vaše okrevanje v primerjavi z včeraj?",
+      "options": [
+        "better",
+        "same",
+        "worse",
+        "much_worse"
+      ],
+      "labels": {
+        "better": "Bolje",
+        "same": "Enako",
+        "worse": "Slabše",
+        "much_worse": "Precej slabše"
+      },
+      "skipExtraction": true
+    },
+    {
+      "id": "worseningCause",
+      "type": "choice",
+      "text": "Kaj se je najbolj poslabšalo?",
+      "options": [
+        "pain",
+        "swelling",
+        "mobility",
+        "walking",
+        "general",
+        "other"
+      ],
+      "labels": {
+        "pain": "Bolečina",
+        "swelling": "Oteklina",
+        "mobility": "Gibljivost",
+        "walking": "Hoja",
+        "general": "Splošno počutje",
+        "other": "Drugo"
+      },
+      "showIf": {
+        "question": "progress",
+        "op": "in",
+        "value": [
+          "worse",
+          "much_worse"
+        ]
+      },
+      "skipExtraction": true
+    },
+    {
+      "id": "pain",
+      "type": "scale",
+      "min": 0,
+      "max": 10,
+      "text": "Kako močno vas danes boli operirano koleno?"
+    },
+    {
+      "id": "painWhen",
+      "type": "choice",
+      "text": "Kdaj je bolečina najmočnejša?",
+      "options": [
+        "rest",
+        "walking",
+        "exercises",
+        "night"
+      ],
+      "labels": {
+        "rest": "V mirovanju",
+        "walking": "Pri hoji",
+        "exercises": "Pri vajah",
+        "night": "Ponoči"
+      },
+      "showIf": {
+        "question": "pain",
+        "op": ">=",
+        "value": 5
+      },
+      "skipExtraction": true
+    },
+    {
+      "id": "swelling",
+      "type": "choice",
+      "text": "Ali je vaše operirano koleno danes bolj oteklo kot včeraj?",
+      "options": [
+        "no",
+        "slightly_more",
+        "much_more",
+        "unknown"
+      ],
+      "labels": {
+        "no": "Ne",
+        "slightly_more": "Malo bolj",
+        "much_more": "Precej bolj",
+        "unknown": "Ne vem"
+      }
+    },
+    {
+      "id": "swellingMobility",
+      "type": "choice",
+      "text": "Ali oteklina vpliva na vašo gibljivost?",
+      "options": [
+        "no",
+        "somewhat",
+        "much",
+        "cannot_walk"
+      ],
+      "labels": {
+        "no": "Ne",
+        "somewhat": "Nekoliko",
+        "much": "Precej",
+        "cannot_walk": "Zaradi nje težko hodim"
+      },
+      "showIf": {
+        "question": "swelling",
+        "op": "in",
+        "value": [
+          "slightly_more",
+          "much_more"
+        ]
+      },
+      "skipExtraction": true
+    },
+    {
+      "id": "wound",
+      "type": "multichoice",
+      "text": "Ali ste opazili spremembe na operacijski rani?",
+      "options": [
+        "none",
+        "redness",
+        "discharge",
+        "opening",
+        "cannot_check"
+      ],
+      "labels": {
+        "none": "Ne",
+        "redness": "Rdečina",
+        "discharge": "Izcedek",
+        "opening": "Rana se odpira",
+        "cannot_check": "Ne morem preveriti"
+      },
+      "exclusiveOptions": [
+        "none",
+        "cannot_check"
+      ]
+    },
+    {
+      "id": "woundPhoto",
+      "type": "photo",
+      "text": "Ali lahko dodate fotografijo operacijske rane?",
+      "skipLabel": "Preskoči",
+      "showIf": {
+        "question": "wound",
+        "op": "in",
+        "value": [
+          "redness",
+          "discharge",
+          "opening"
+        ]
+      }
+    },
+    {
+      "id": "woundWhyNot",
+      "type": "choice",
+      "text": "Zakaj ne morete preveriti rane?",
+      "options": [
+        "covered",
+        "need_help",
+        "other"
+      ],
+      "labels": {
+        "covered": "Pokrita je s prevezo",
+        "need_help": "Potrebujem pomoč",
+        "other": "Drugo"
+      },
+      "showIf": {
+        "question": "wound",
+        "op": "in",
+        "value": [
+          "cannot_check"
+        ]
+      },
+      "skipExtraction": true
+    },
+    {
+      "id": "exercises",
+      "type": "choice",
+      "text": "Ali ste danes opravili predpisane rehabilitacijske vaje?",
+      "options": [
+        "all",
+        "partly",
+        "no",
+        "not_prescribed"
+      ],
+      "labels": {
+        "all": "Da, vse",
+        "partly": "Delno",
+        "no": "Ne",
+        "not_prescribed": "Danes niso predpisane"
+      },
+      "skipExtraction": true
+    },
+    {
+      "id": "exercisesWhy",
+      "type": "choice",
+      "text": "Zakaj niste opravili vseh predpisanih vaj?",
+      "options": [
+        "pain",
+        "fatigue",
+        "fear",
+        "dont_understand",
+        "forgot",
+        "other"
+      ],
+      "labels": {
+        "pain": "Bolečina",
+        "fatigue": "Utrujenost",
+        "fear": "Strah",
+        "dont_understand": "Ne razumem vaj",
+        "forgot": "Pozabil sem",
+        "other": "Drugo"
+      },
+      "showIf": {
+        "question": "exercises",
+        "op": "in",
+        "value": [
+          "partly",
+          "no"
+        ]
+      },
+      "skipExtraction": true
+    },
+    {
+      "id": "meds",
+      "type": "choice",
+      "text": "Ali ste danes vzeli vsa predpisana zdravila?",
+      "options": [
+        "yes",
+        "some_skipped",
+        "no",
+        "none_prescribed"
+      ],
+      "labels": {
+        "yes": "Da",
+        "some_skipped": "Nekatera sem izpustil",
+        "no": "Ne",
+        "none_prescribed": "Danes nimam predpisanih zdravil"
+      },
+      "skipExtraction": true
+    },
+    {
+      "id": "medsWhy",
+      "type": "choice",
+      "text": "Zakaj niste vzeli vseh zdravil?",
+      "options": [
+        "forgot",
+        "side_effects",
+        "ran_out",
+        "dont_understand",
+        "other"
+      ],
+      "labels": {
+        "forgot": "Pozabil sem",
+        "side_effects": "Neželeni učinki",
+        "ran_out": "Zmanjkalo jih je",
+        "dont_understand": "Ne razumem navodil",
+        "other": "Drugo"
+      },
+      "showIf": {
+        "question": "meds",
+        "op": "in",
+        "value": [
+          "some_skipped",
+          "no"
+        ]
+      },
+      "skipExtraction": true
+    },
+    {
+      "id": "symptoms",
+      "type": "multichoice",
+      "text": "Ali ste danes imeli katerega od naslednjih simptomov?",
+      "options": [
+        "fever",
+        "calf",
+        "breathing_chest",
+        "fainting",
+        "none"
+      ],
+      "labels": {
+        "fever": "Vročina",
+        "calf": "Nova bolečina ali otekanje meč",
+        "breathing_chest": "Nenadna zadihanost ali bolečina v prsih",
+        "fainting": "Omedlevica",
+        "none": "Nič od naštetega"
+      },
+      "exclusiveOptions": [
+        "none"
+      ],
+      "immediateAlert": {
+        "options": [
+          "breathing_chest",
+          "fainting"
+        ],
+        "title": "Pokličite 112",
+        "text": "Nenadna zadihanost, bolečina v prsih ali omedlevica so lahko znak nujnega stanja. Takoj pokličite 112.",
+        "action": "call_112"
+      }
+    },
+    {
+      "id": "temperature",
+      "type": "number",
+      "unit": "°C",
+      "text": "Koliko znaša vaša izmerjena temperatura?",
+      "skipLabel": "Nisem izmeril",
+      "showIf": {
+        "question": "symptoms",
+        "op": "in",
+        "value": [
+          "fever"
+        ]
+      }
+    },
+    {
+      "id": "calfLeg",
+      "type": "choice",
+      "text": "Na kateri nogi imate težavo?",
+      "options": [
+        "operated",
+        "other",
+        "both"
+      ],
+      "labels": {
+        "operated": "Operirana",
+        "other": "Druga",
+        "both": "Obe"
+      },
+      "showIf": {
+        "question": "symptoms",
+        "op": "in",
+        "value": [
+          "calf"
+        ]
+      },
+      "skipExtraction": true
+    },
+    {
+      "id": "notes",
+      "type": "text",
+      "text": "Želite še kaj dodati? (neobvezno)"
+    }
   ],
   "rules": [
-    { "id": "fever", "field": "temperature", "op": ">=", "value": 38.0, "severity": "attention" },
-    { "id": "wound-discharge", "field": "wound", "op": "==", "value": "discharge", "severity": "attention" },
-    { "id": "high-pain", "field": "pain", "op": ">=", "value": 8, "severity": "attention" },
-    { "id": "calf", "field": "calfPain", "op": "==", "value": true, "severity": "urgent" },
-    { "id": "breathing", "field": "breathing", "op": "==", "value": true, "severity": "urgent" }
+    {
+      "id": "fever",
+      "field": "temperature",
+      "op": ">=",
+      "value": 38.0,
+      "severity": "attention"
+    },
+    {
+      "id": "fever-reported",
+      "field": "symptoms",
+      "op": "in",
+      "value": [
+        "fever"
+      ],
+      "severity": "attention"
+    },
+    {
+      "id": "calf",
+      "field": "symptoms",
+      "op": "in",
+      "value": [
+        "calf"
+      ],
+      "severity": "attention"
+    },
+    {
+      "id": "breathing",
+      "field": "symptoms",
+      "op": "in",
+      "value": [
+        "breathing_chest"
+      ],
+      "severity": "urgent"
+    },
+    {
+      "id": "fainting",
+      "field": "symptoms",
+      "op": "in",
+      "value": [
+        "fainting"
+      ],
+      "severity": "urgent"
+    },
+    {
+      "id": "high-pain",
+      "field": "pain",
+      "op": ">=",
+      "value": 8,
+      "severity": "attention"
+    },
+    {
+      "id": "wound-problem",
+      "field": "wound",
+      "op": "in",
+      "value": [
+        "discharge",
+        "opening"
+      ],
+      "severity": "attention"
+    },
+    {
+      "id": "progress-much-worse",
+      "field": "progress",
+      "op": "in",
+      "value": [
+        "much_worse"
+      ],
+      "severity": "attention"
+    },
+    {
+      "id": "swelling-much-more",
+      "field": "swelling",
+      "op": "in",
+      "value": [
+        "much_more"
+      ],
+      "severity": "attention"
+    },
+    {
+      "id": "meds-missed",
+      "field": "meds",
+      "op": "in",
+      "value": [
+        "no"
+      ],
+      "severity": "attention"
+    }
   ]
 }

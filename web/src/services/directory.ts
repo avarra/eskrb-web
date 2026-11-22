@@ -38,13 +38,18 @@ export interface ProtocolQuestion {
   max: number | null
   unit: string | null
   options: string[] | null
+  labels: Record<string, string> | null
+  exclusiveOptions: string[] | null
+  showIf: { question: string; op: string; value: string | number | boolean | string[] } | null
+  immediateAlert: { options: string[]; title: string; text: string; action: string } | null
+  skipLabel: string | null
   required: boolean
 }
 export interface ProtocolRule {
   id: string
   field: string
   op: string
-  value: string | number | boolean
+  value: string | number | boolean | string[]
   severity: string
 }
 export interface ProtocolDetail {
@@ -256,6 +261,57 @@ export interface BuddyThreadMessage {
   reported: boolean
   hidden: boolean
 }
+export interface PhotoPoint {
+  logId: string
+  mediaUrl: string
+  at: string
+  date: string
+  checkInId: string | null
+}
+export interface PhotoSeries {
+  questionId: string
+  title: string
+  photos: PhotoPoint[]
+}
+export interface ChartRule {
+  op: '>' | '>=' | '<' | '<='
+  value: number
+  severity: 'attention' | 'urgent'
+}
+export interface ChartPoint {
+  at: string
+  date: string
+  value: number
+  source: 'checkin' | 'note'
+}
+export interface ChartVariable {
+  questionId: string
+  text: string
+  type: 'number' | 'scale'
+  unit: string | null
+  min: number | null
+  max: number | null
+  rules: ChartRule[]
+  points: ChartPoint[]
+}
+export interface ActivityDay {
+  date: string
+  checkIns: number
+  notes: number
+  photos: number
+  patientMessages: number
+  staffMessages: number
+  attention: number
+  urgent: number
+}
+export interface EpisodeCharts {
+  startDate: string
+  endDate: string
+  today: string
+  dayNumber: number
+  variables: ChartVariable[]
+  days: ActivityDay[]
+}
 export interface Message {
   id: string
   fromUserId: string
@@ -299,6 +355,8 @@ export const directory = {
   buddyCandidates: (episodeId: string) =>
     api<BuddyCandidate[]>(`/staff/buddies/candidates?episodeId=${episodeId}`),
   buddyThread: (pairId: string) => api<BuddyThreadMessage[]>(`/staff/buddies/${pairId}/messages`),
+  photos: (episodeId: string) => api<PhotoSeries[]>(`/episodes/${episodeId}/photos`),
+  charts: (episodeId: string) => api<EpisodeCharts>(`/episodes/${episodeId}/charts`),
   triage: () => api<Triage>('/staff/triage'),
   notes: (episodeId: string) => api<Note[]>(`/episodes/${episodeId}/notes`),
   escalations: (episodeId: string) => api<Escalation[]>(`/episodes/${episodeId}/escalations`),

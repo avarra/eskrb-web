@@ -46,3 +46,6 @@ Everything is admin-only unless noted. Keep this file current: delete items when
 - [ ] Notify (push) on escalation and on new patient-visible notes. [ ] Escalation history on the triage card after resolve. [ ] Seeded history for the new `senior`/escalation demo. [ ] Mobile: show notes + the `medsTaken` question.
 - (done) Push service + device registration + admin manual send (on by default; `Notifications:Enabled=false` is the kill switch). [ ] Wire triggers (message, note, escalation, urgent flag), poll receipts, retry/backoff on 429/5xx, set `Expo:AccessToken`, mobile: register the token.
 - (done) Recovery twin backend + dashboard (docs/buddy.md). [ ] Mobile buddy screen, native review of the Slovenian cheer copy, in-app consent instead of the staff checkbox (later).
+- (done) Photo timeline (dashboard + `GET /episodes/{id}/photos`). [ ] Overlay/side-by-side of two arbitrary dates, wound measurements.
+- (done) Charts + activity strip on the episode page. [ ] Boolean/choice trends (calf pain, wound state), zoom/range, compare two episodes.
+- (done) Conditional + multi-choice questions, new knee-replacement questionnaire (docs/checkin-questions.md). [ ] Chart ordinal choice answers (feeling, progress), native review of the Slovenian copy and the 112 text, clinical review of thresholds.

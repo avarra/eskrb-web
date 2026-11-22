@@ -36,8 +36,21 @@ public static class RulesEngine
         return hits;
     }
 
-    private static bool Matches(JsonElement answer, string op, JsonElement expected)
+    /// <summary>One comparison of an answer against an expected value; shared by rules and question conditions.</summary>
+    public static bool Matches(JsonElement answer, string op, JsonElement expected)
     {
+        if (op == "in")
+        {
+            if (expected.ValueKind != JsonValueKind.Array) return false;
+            var wanted = expected.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString()).ToHashSet();
+            return answer.ValueKind switch
+            {
+                JsonValueKind.String => wanted.Contains(answer.GetString()),
+                JsonValueKind.Array => answer.EnumerateArray().Any(a => a.ValueKind == JsonValueKind.String && wanted.Contains(a.GetString())),
+                _ => false,
+            };
+        }
+
         if (answer.ValueKind == JsonValueKind.Number && expected.ValueKind == JsonValueKind.Number)
             return Compare(answer.GetDouble().CompareTo(expected.GetDouble()), op);
 

@@ -280,3 +280,42 @@ button.small {
   padding: 0 14px;
   font-size: 13px;
 }
+
+/*
+ * Review outcomes. Deliberate exception to the one-job-per-colour rule (the product owner asked for outcome colours):
+ * green = nothing more to do, yellow = keep watching, blue = patient contacted, red = needs a visit / referral.
+ */
+.o-no_action {
+  --o-bg: #e6f4ef;
+  --o-line: #0f7a5c;
+  --o-ink: #0b5f48;
+  --o-solid: #0f7a5c;
+  --o-solid-ink: #fff;
+}
+.o-monitor {
+  --o-bg: #fff6d6;
+  --o-line: #e0b000;
+  --o-ink: #5c4600;
+  --o-solid: #ffd45c;
+  --o-solid-ink: #0c2145;
+}
+.o-contacted {
+  --o-bg: #ebf1fd;
+  --o-line: #1652c4;
+  --o-ink: #1652c4;
+  --o-solid: #1652c4;
+  --o-solid-ink: #fff;
+}
+.o-referred {
+  --o-bg: #fbe6e7;
+  --o-line: #b3121a;
+  --o-ink: #b3121a;
+  --o-solid: #b3121a;
+  --o-solid-ink: #fff;
+}
+.chip[class*='o-'] {
+  background: var(--o-bg);
+  color: var(--o-ink);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--o-line) 35%, transparent);
+  font-weight: 600;
+}

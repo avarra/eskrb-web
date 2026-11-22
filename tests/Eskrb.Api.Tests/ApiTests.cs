@@ -121,22 +121,22 @@ public class ApiTests(ApiFixture api) : IClassFixture<ApiFixture>
     [Fact]
     public async Task Text_log_with_extracted_urgent_value_flags_and_asks_for_112()
     {
-        api.Extractor.Behavior = _ => new() { ["calfPain"] = new(J("true"), "boli me meča") };
-        var r = await TextLog("ana", "Že dva dni me boli me meča in sem utrujena.", "dictated");
+        api.Extractor.Behavior = _ => new() { ["symptoms"] = new(J("[\"breathing_chest\"]"), "zmanjkuje sape") };
+        var r = await TextLog("ana", "Že dva dni mi zmanjkuje sape in sem utrujena.", "dictated");
         Assert.Equal(HttpStatusCode.Created, r.StatusCode);
         var b = await Body(r);
         Assert.Equal("call_112", b.GetProperty("patientAction").GetString());
         var flag = Assert.Single(b.GetProperty("flags").EnumerateArray());
-        Assert.Equal("calf", flag.GetProperty("ruleId").GetString());
-        Assert.Equal("boli me meča", flag.GetProperty("quote").GetString());   // the patient's own words
-        Assert.True(b.GetProperty("extracted").GetProperty("calfPain").GetBoolean());
+        Assert.Equal("breathing", flag.GetProperty("ruleId").GetString());
+        Assert.Equal("zmanjkuje sape", flag.GetProperty("quote").GetString());   // the patient's own words
+        Assert.Equal("breathing_chest", b.GetProperty("extracted").GetProperty("symptoms")[0].GetString());
         Assert.False(b.GetProperty("extractionFailed").GetBoolean());
     }
 
     [Fact]
     public async Task Quote_that_is_not_in_the_text_falls_back_to_the_whole_text()
     {
-        api.Extractor.Behavior = _ => new() { ["calfPain"] = new(J("true"), "something invented") };
+        api.Extractor.Behavior = _ => new() { ["symptoms"] = new(J("[\"calf\"]"), "something invented") };
         var b = await Body(await TextLog("ana", "Meča me boli."));
         Assert.Equal("Meča me boli.", b.GetProperty("flags")[0].GetProperty("quote").GetString());
     }
@@ -247,7 +247,9 @@ public class ApiTests(ApiFixture api) : IClassFixture<ApiFixture>
             c.Add(f, part, "w.png");
             return c;
         }
-        var ok = await api.As("ana").PostAsync($"/episodes/{AnaEpisode}/checkins", Form("{\"pain\":2}", "woundPhoto"));
+        // the wound photo is only asked when the wound shows a change (conditional question)
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("ana").PostAsync($"/episodes/{AnaEpisode}/checkins", Form("{\"pain\":2,\"wound\":[\"none\"]}", "woundPhoto"))).StatusCode);
+        var ok = await api.As("ana").PostAsync($"/episodes/{AnaEpisode}/checkins", Form("{\"pain\":2,\"wound\":[\"redness\"]}", "woundPhoto"));
         Assert.Equal(HttpStatusCode.Created, ok.StatusCode);
         var url = (await ok.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("answers").GetProperty("woundPhoto").GetString()!;
         Assert.StartsWith("/media/", url);
@@ -259,7 +261,7 @@ public class ApiTests(ApiFixture api) : IClassFixture<ApiFixture>
 
         // wrong part name, JSON-supplied photo answer: rejected
         Assert.Equal(HttpStatusCode.BadRequest, (await api.As("ana").PostAsync($"/episodes/{AnaEpisode}/checkins", Form("{\"pain\":2}", "pain"))).StatusCode);
-        var json = await api.As("ana").PostAsJsonAsync($"/episodes/{AnaEpisode}/checkins", new { answers = new { woundPhoto = "x" } });
+        var json = await api.As("ana").PostAsJsonAsync($"/episodes/{AnaEpisode}/checkins", new { answers = new { wound = new[] { "redness" }, woundPhoto = "x" } });
         Assert.Equal(HttpStatusCode.BadRequest, json.StatusCode);
     }
 
@@ -268,7 +270,7 @@ public class ApiTests(ApiFixture api) : IClassFixture<ApiFixture>
     {
         api.Extractor.Behavior = _ => new()
         {
-            ["calfPain"] = new(J("true"), "boli me meča"),
+            ["symptoms"] = new(J("[\"calf\"]"), "boli me meča"),
             ["pain"] = new(J("9"), "huda bolečina"), // already answered directly: must not be overridden
         };
         var r = await api.As("ana").PostAsJsonAsync($"/episodes/{AnaEpisode}/checkins",
@@ -276,8 +278,8 @@ public class ApiTests(ApiFixture api) : IClassFixture<ApiFixture>
         Assert.Equal(HttpStatusCode.Created, r.StatusCode);
         var b = await Body(r);
         Assert.Equal(2, b.GetProperty("answers").GetProperty("pain").GetInt32());
-        Assert.True(b.GetProperty("answers").GetProperty("calfPain").GetBoolean());
-        Assert.Equal("call_112", b.GetProperty("patientAction").GetString());
+        Assert.Equal("calf", b.GetProperty("answers").GetProperty("symptoms")[0].GetString());
+        Assert.Equal("contact_team", b.GetProperty("patientAction").GetString());   // calf = attention; only breathing/chest/fainting are urgent
 
         // extractor down: check-in is still saved, just without inferred values
         api.Extractor.Behavior = _ => throw new InvalidOperationException("llm down");
@@ -336,15 +338,10 @@ public class ApiTests(ApiFixture api) : IClassFixture<ApiFixture>
     // ---------- episode notes ----------
 
     [Fact]
-    public async Task Notes_are_staff_managed_private_ones_never_reach_the_patient_and_meds_add_a_check_in_question()
+    public async Task Notes_are_staff_managed_and_private_ones_never_reach_the_patient()
     {
         const string luka = "00000000-0000-0000-0000-00000000e004";
         string url(string tail = "") => $"/episodes/{luka}/notes{tail}";
-
-        // before any medication note: no meds question
-        var before = await Body(await api.As("luka").GetAsync("/me/episode"));
-        Assert.DoesNotContain(before.GetProperty("protocol").GetProperty("questions").EnumerateArray(), q => q.GetProperty("id").GetString() == "medsTaken");
-        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("luka").PostAsJsonAsync($"/episodes/{luka}/checkins", new { answers = new { medsTaken = true } })).StatusCode);
 
         var med = await Body(await api.As("doctor").PostAsJsonAsync(url(), new { kind = "medication", title = "Antibiotik", body = "Ena tableta zjutraj in zvečer." }));
         await api.As("doctor").PostAsJsonAsync(url(), new { kind = "advice", body = "Noge držite dvignjene." });
@@ -357,12 +354,7 @@ public class ApiTests(ApiFixture api) : IClassFixture<ApiFixture>
         Assert.DoesNotContain("penicilin", await (await api.As("luka").GetAsync("/me/episode")).Content.ReadAsStringAsync());
         Assert.Equal(HttpStatusCode.Forbidden, (await api.As("luka").PostAsJsonAsync(url(), new { kind = "advice", body = "x" })).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await api.As("ana").GetAsync(url())).StatusCode);
-
-        // /me/episode now carries the notes and the synthesized question; the check-in accepts it
-        var me = await Body(await api.As("luka").GetAsync("/me/episode"));
-        Assert.Equal(2, me.GetProperty("notes").GetArrayLength());
-        Assert.Contains(me.GetProperty("protocol").GetProperty("questions").EnumerateArray(), q => q.GetProperty("id").GetString() == "medsTaken");
-        Assert.Equal(HttpStatusCode.Created, (await api.As("luka").PostAsJsonAsync($"/episodes/{luka}/checkins", new { answers = new { pain = 2, medsTaken = true } })).StatusCode);
+        Assert.Equal(2, (await Body(await api.As("luka").GetAsync("/me/episode"))).GetProperty("notes").GetArrayLength());
 
         // edit (kind, title, body) and delete
         var id = med.GetProperty("id").GetString();
@@ -371,8 +363,53 @@ public class ApiTests(ApiFixture api) : IClassFixture<ApiFixture>
         Assert.Equal("Antibiotik", edited.GetProperty("title").GetString());
         Assert.Equal(HttpStatusCode.BadRequest, (await api.As("doctor").PatchAsJsonAsync(url($"/{id}"), new { kind = "nonsense" })).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await api.As("doctor").DeleteAsync(url($"/{id}"))).StatusCode);
-        var gone = await Body(await api.As("luka").GetAsync("/me/episode"));
-        Assert.DoesNotContain(gone.GetProperty("protocol").GetProperty("questions").EnumerateArray(), q => q.GetProperty("id").GetString() == "medsTaken");
+        Assert.Equal(1, (await Body(await api.As("luka").GetAsync("/me/episode"))).GetProperty("notes").GetArrayLength());
+    }
+
+    // ---------- conditional + multi-choice questions ----------
+
+    [Fact]
+    public async Task Conditional_and_multichoice_answers_are_validated_and_drive_the_flags()
+    {
+        async Task<HttpResponseMessage> CheckIn(string who, string ep, object answers) =>
+            await api.As(who).PostAsJsonAsync($"/episodes/{ep}/checkins", new { answers });
+        const string nina = "00000000-0000-0000-0000-00000000e003";
+
+        // the protocol exposes labels, conditions and the safety alert for the phone
+        var q = (await Body(await api.As("nina").GetAsync("/me/episode"))).GetProperty("protocol").GetProperty("questions").EnumerateArray().ToDictionary(x => x.GetProperty("id").GetString()!);
+        Assert.Equal("multichoice", q["symptoms"].GetProperty("type").GetString());
+        Assert.Equal("none", q["symptoms"].GetProperty("exclusiveOptions")[0].GetString());
+        Assert.Equal("Vročina", q["symptoms"].GetProperty("labels").GetProperty("fever").GetString());
+        Assert.Equal("breathing_chest", q["symptoms"].GetProperty("immediateAlert").GetProperty("options")[0].GetString());
+        Assert.Equal("painWhen", q["painWhen"].GetProperty("id").GetString());
+        Assert.Equal(5, q["painWhen"].GetProperty("showIf").GetProperty("value").GetInt32());
+        Assert.Equal("Nisem izmeril", q["temperature"].GetProperty("skipLabel").GetString());
+
+        // a follow-up that is not asked is rejected; once its condition holds it is accepted
+        var notAsked = await CheckIn("nina", nina, new { pain = 2, painWhen = "walking" });
+        Assert.Equal(HttpStatusCode.BadRequest, notAsked.StatusCode);
+        Assert.Contains("not asked", (await Body(notAsked)).GetProperty("detail").GetString());
+        Assert.Equal(HttpStatusCode.Created, (await CheckIn("nina", nina, new { pain = 6, painWhen = "walking" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await CheckIn("nina", nina, new { symptoms = new[] { "none" }, temperature = 37 })).StatusCode);   // asked only for "fever"
+        Assert.Equal(HttpStatusCode.BadRequest, (await CheckIn("nina", nina, new { feeling = "good", feelingCause = "pain" })).StatusCode);
+
+        // multichoice rules: exclusive option, unknown option, duplicates, empty
+        Assert.Equal(HttpStatusCode.BadRequest, (await CheckIn("nina", nina, new { symptoms = new[] { "none", "fever" } })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await CheckIn("nina", nina, new { symptoms = new[] { "nonsense" } })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await CheckIn("nina", nina, new { symptoms = Array.Empty<string>() })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await CheckIn("nina", nina, new { symptoms = "fever" })).StatusCode);
+
+        // fever + measured temperature: both rules fire (attention -> contact the team)
+        var fever = await Body(await CheckIn("nina", nina, new { symptoms = new[] { "fever" }, temperature = 38.6 }));
+        Assert.Equal("contact_team", fever.GetProperty("patientAction").GetString());
+        Assert.Equal(["fever", "fever-reported"], fever.GetProperty("flags").EnumerateArray().Select(f => f.GetProperty("ruleId").GetString()!).Order().ToArray());
+        Assert.Contains(fever.GetProperty("flags").EnumerateArray(), f => f.GetProperty("quote").GetString() == "symptoms: Vročina");   // labels in the flag quote
+
+        // the safety answers are urgent (the phone interrupts and submits right away)
+        var chest = await Body(await CheckIn("nina", nina, new { symptoms = new[] { "breathing_chest" } }));
+        Assert.Equal("call_112", chest.GetProperty("patientAction").GetString());
+        Assert.Equal("call_112", (await Body(await CheckIn("nina", nina, new { symptoms = new[] { "fainting", "calf" } }))).GetProperty("patientAction").GetString());
+        Assert.Equal("none", (await Body(await CheckIn("nina", nina, new { symptoms = new[] { "none" }, wound = new[] { "none" } }))).GetProperty("patientAction").GetString());
     }
 
     // ---------- escalation ----------
@@ -501,80 +538,170 @@ public class ApiTests(ApiFixture api) : IClassFixture<ApiFixture>
     // ---------- recovery twin (buddy) ----------
 
     [Fact]
-    public async Task Buddy_pairing_messages_cheers_moderation_and_leaving()
+    public async Task Seeded_pair_ana_and_luka_has_a_five_day_streak_and_a_conversation()
     {
-        string ana = AnaEpisode, marko = MarkoEpisode;
-        const string nina = "00000000-0000-0000-0000-00000000e003";
-
-        // staff: candidates exclude already paired patients (the seeded luka+nina pair) and the patient themselves
-        var cands = (await Body(await api.As("doctor").GetAsync($"/staff/buddies/candidates?episodeId={ana}"))).EnumerateArray().Select(c => c.GetProperty("patientName").GetString()).ToList();
-        Assert.Contains("Marko Horvat", cands);
-        Assert.DoesNotContain("Nina Kovač", cands);
-        Assert.DoesNotContain("Ana Novak", cands);
-
-        // pairing rules
-        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("doctor").PostAsJsonAsync("/staff/buddies", new { episodeAId = ana, episodeBId = marko, consentConfirmed = false })).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("doctor").PostAsJsonAsync("/staff/buddies", new { episodeAId = ana, episodeBId = ana, consentConfirmed = true })).StatusCode);
-        Assert.Equal(HttpStatusCode.Conflict, (await api.As("doctor").PostAsJsonAsync("/staff/buddies", new { episodeAId = ana, episodeBId = nina, consentConfirmed = true })).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await api.As("ana").PostAsJsonAsync("/staff/buddies", new { episodeAId = ana, episodeBId = marko, consentConfirmed = true })).StatusCode);
-        var made = await api.As("doctor").PostAsJsonAsync("/staff/buddies", new { episodeAId = ana, episodeBId = marko, consentConfirmed = true });
-        Assert.Equal(HttpStatusCode.Created, made.StatusCode);
-        var pairId = (await Body(made)).GetProperty("id").GetString();
-        Assert.Equal(HttpStatusCode.Conflict, (await api.As("doctor").PostAsJsonAsync("/staff/buddies", new { episodeAId = ana, episodeBId = marko, consentConfirmed = true })).StatusCode);
-
-        // the buddy sees only a first name and a few non-health facts
-        var raw = await (await api.As("ana").GetAsync("/me/buddy")).Content.ReadAsStringAsync();
+        // luka sees ana: first name only, a 5-day streak (a gap a week ago), checked in today
+        var raw = await (await api.As("luka").GetAsync("/me/buddy")).Content.ReadAsStringAsync();
         var view = JsonDocument.Parse(raw).RootElement;
         Assert.Equal("active", view.GetProperty("status").GetString());
-        Assert.Equal("Marko", view.GetProperty("buddy").GetProperty("firstName").GetString());
-        Assert.DoesNotContain("Horvat", raw);
+        Assert.Equal("Ana", view.GetProperty("buddy").GetProperty("firstName").GetString());
+        Assert.Equal(5, view.GetProperty("buddy").GetProperty("streak").GetInt32());
+        Assert.True(view.GetProperty("buddy").GetProperty("checkedInToday").GetBoolean());
+        Assert.DoesNotContain("Novak", raw);
+
+        var ana = await Body(await api.As("ana").GetAsync("/me/buddy"));
+        Assert.Equal("Luka", ana.GetProperty("buddy").GetProperty("firstName").GetString());
+        Assert.True(ana.GetProperty("unread").GetInt32() >= 1);           // luka's latest messages are unread
+        var thread = (await Body(await api.As("ana").GetAsync("/me/buddy/messages"))).EnumerateArray().ToList();
+        Assert.True(thread.Count >= 8);
+        Assert.Contains(thread, m => m.GetProperty("fromMe").GetBoolean());
+        Assert.Contains(thread, m => m.GetProperty("kind").GetString() == "cheer");
+        Assert.Contains(thread, m => m.GetProperty("source").GetString() == "dictated");
+
+        // ana is active (day 20 of 42) with the seeded history
+        Assert.Equal(HttpStatusCode.OK, (await api.As("ana").GetAsync("/me/episode")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Buddy_pairing_messages_cheers_moderation_and_leaving()
+    {
+        string marko = MarkoEpisode;
+        const string nina = "00000000-0000-0000-0000-00000000e003";
+
+        // staff: candidates exclude already paired patients (the seeded ana+luka pair) and the patient themselves
+        var cands = (await Body(await api.As("doctor").GetAsync($"/staff/buddies/candidates?episodeId={marko}"))).EnumerateArray().Select(c => c.GetProperty("patientName").GetString()).ToList();
+        Assert.Contains("Nina Kovač", cands);
+        Assert.DoesNotContain("Ana Novak", cands);
+        Assert.DoesNotContain("Luka Krajnc", cands);
+        Assert.DoesNotContain("Marko Horvat", cands);
+
+        // pairing rules
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("doctor").PostAsJsonAsync("/staff/buddies", new { episodeAId = marko, episodeBId = nina, consentConfirmed = false })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("doctor").PostAsJsonAsync("/staff/buddies", new { episodeAId = marko, episodeBId = marko, consentConfirmed = true })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await api.As("doctor").PostAsJsonAsync("/staff/buddies", new { episodeAId = marko, episodeBId = AnaEpisode, consentConfirmed = true })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await api.As("marko").PostAsJsonAsync("/staff/buddies", new { episodeAId = marko, episodeBId = nina, consentConfirmed = true })).StatusCode);
+        var made = await api.As("doctor").PostAsJsonAsync("/staff/buddies", new { episodeAId = marko, episodeBId = nina, consentConfirmed = true });
+        Assert.Equal(HttpStatusCode.Created, made.StatusCode);
+        var pairId = (await Body(made)).GetProperty("id").GetString();
+        Assert.Equal(HttpStatusCode.Conflict, (await api.As("doctor").PostAsJsonAsync("/staff/buddies", new { episodeAId = marko, episodeBId = nina, consentConfirmed = true })).StatusCode);
+
+        // the buddy sees only a first name and a few non-health facts
+        var raw = await (await api.As("marko").GetAsync("/me/buddy")).Content.ReadAsStringAsync();
+        var view = JsonDocument.Parse(raw).RootElement;
+        Assert.Equal("active", view.GetProperty("status").GetString());
+        Assert.Equal("Nina", view.GetProperty("buddy").GetProperty("firstName").GetString());
+        Assert.DoesNotContain("Kovač", raw);
         Assert.Equal(["firstName", "dayNumber", "checkedInToday", "streak", "missedDays", "finished"],
             view.GetProperty("buddy").EnumerateObject().Select(p => p.Name).ToArray());
         Assert.Equal(Buddy_Catalogue.Count, view.GetProperty("cheers").GetArrayLength());
 
         // cheers: a fitting one works, one that does not fit is refused, unknown is a 400
-        Assert.Equal(HttpStatusCode.Created, (await api.As("ana").PostAsJsonAsync("/me/buddy/cheers", new { cheerId = "fingers-crossed" })).StatusCode);
-        Assert.Equal(HttpStatusCode.Conflict, (await api.As("ana").PostAsJsonAsync("/me/buddy/cheers", new { cheerId = "streak-30" })).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("ana").PostAsJsonAsync("/me/buddy/cheers", new { cheerId = "nope" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await api.As("marko").PostAsJsonAsync("/me/buddy/cheers", new { cheerId = "fingers-crossed" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await api.As("marko").PostAsJsonAsync("/me/buddy/cheers", new { cheerId = "streak-30" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("marko").PostAsJsonAsync("/me/buddy/cheers", new { cheerId = "nope" })).StatusCode);
 
         // text: typed + dictated, validation
-        Assert.Equal(HttpStatusCode.Created, (await api.As("ana").PostAsJsonAsync("/me/buddy/messages", new { text = "Dober dan!", source = "dictated" })).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("ana").PostAsJsonAsync("/me/buddy/messages", new { text = "poglejte https://x.si" })).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("ana").PostAsJsonAsync("/me/buddy/messages", new { text = new string('x', 301) })).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("ana").PostAsJsonAsync("/me/buddy/messages", new { text = "ok", source = "audio" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await api.As("marko").PostAsJsonAsync("/me/buddy/messages", new { text = "Dober dan!", source = "dictated" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("marko").PostAsJsonAsync("/me/buddy/messages", new { text = "poglejte https://x.si" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("marko").PostAsJsonAsync("/me/buddy/messages", new { text = new string('x', 301) })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("marko").PostAsJsonAsync("/me/buddy/messages", new { text = "ok", source = "audio" })).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await api.CreateClient().GetAsync("/me/buddy")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await api.As("doctor").GetAsync("/me/buddy")).StatusCode);
 
-        // marko reads, unread resets, can report; outsiders cannot see the thread
-        Assert.Equal(2, (await Body(await api.As("marko").GetAsync("/me/buddy"))).GetProperty("unread").GetInt32());
-        var thread = (await Body(await api.As("marko").GetAsync("/me/buddy/messages"))).EnumerateArray().ToList();
+        // nina reads, unread resets, can report; outsiders cannot report on this thread
+        Assert.Equal(2, (await Body(await api.As("nina").GetAsync("/me/buddy"))).GetProperty("unread").GetInt32());
+        var thread = (await Body(await api.As("nina").GetAsync("/me/buddy/messages"))).EnumerateArray().ToList();
         Assert.Equal(["cheer", "text"], thread.Select(m => m.GetProperty("kind").GetString()).ToArray());
         Assert.All(thread, m => Assert.False(m.GetProperty("fromMe").GetBoolean()));
-        await api.As("marko").PostAsync("/me/buddy/read", null);
-        Assert.Equal(0, (await Body(await api.As("marko").GetAsync("/me/buddy"))).GetProperty("unread").GetInt32());
+        await api.As("nina").PostAsync("/me/buddy/read", null);
+        Assert.Equal(0, (await Body(await api.As("nina").GetAsync("/me/buddy"))).GetProperty("unread").GetInt32());
         var textId = thread[1].GetProperty("id").GetString();
-        Assert.Equal(HttpStatusCode.NoContent, (await api.As("marko").PostAsync($"/me/buddy/messages/{textId}/report", null)).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await api.As("nina").PostAsync($"/me/buddy/messages/{textId}/report", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await api.As("nina").PostAsync($"/me/buddy/messages/{textId}/report", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await api.As("ana").PostAsync($"/me/buddy/messages/{textId}/report", null)).StatusCode);
 
         // staff see the thread + the report, hide the message; the patient no longer gets it
         var staffThread = (await Body(await api.As("doctor").GetAsync($"/staff/buddies/{pairId}/messages"))).EnumerateArray().ToList();
         Assert.True(staffThread[1].GetProperty("reported").GetBoolean());
         Assert.Equal(HttpStatusCode.NoContent, (await api.As("doctor").DeleteAsync($"/staff/buddies/{pairId}/messages/{textId}")).StatusCode);
-        Assert.Single((await Body(await api.As("marko").GetAsync("/me/buddy/messages"))).EnumerateArray());
+        Assert.Single((await Body(await api.As("nina").GetAsync("/me/buddy/messages"))).EnumerateArray());
         var list = (await Body(await api.As("doctor").GetAsync("/staff/buddies"))).EnumerateArray().First(p => p.GetProperty("id").GetString() == pairId);
         Assert.Equal(1, list.GetProperty("reported").GetInt32());
 
         // leaving ends it neutrally (no who/why to the other side) and blocks further messages
-        Assert.Equal(HttpStatusCode.NoContent, (await api.As("marko").DeleteAsync("/me/buddy")).StatusCode);
-        var after = await Body(await api.As("ana").GetAsync("/me/buddy"));
+        Assert.Equal(HttpStatusCode.NoContent, (await api.As("nina").DeleteAsync("/me/buddy")).StatusCode);
+        var after = await Body(await api.As("marko").GetAsync("/me/buddy"));
         Assert.Equal("ended", after.GetProperty("status").GetString());
         Assert.Equal(JsonValueKind.Null, after.GetProperty("buddy").ValueKind);
-        Assert.Equal(HttpStatusCode.Conflict, (await api.As("ana").PostAsJsonAsync("/me/buddy/messages", new { text = "Še tu?" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await api.As("marko").PostAsJsonAsync("/me/buddy/messages", new { text = "Še tu?" })).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await api.As("doctor").DeleteAsync($"/staff/buddies/{Guid.NewGuid()}")).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await api.As("doctor").DeleteAsync($"/staff/buddies/{pairId}")).StatusCode);   // staff unpair is idempotent
     }
 
     private static readonly IReadOnlyList<Eskrb.Api.Rules.Cheer> Buddy_Catalogue = Eskrb.Api.Rules.Buddy.Catalogue;
+
+    // ---------- charts ----------
+
+    [Fact]
+    public async Task Charts_give_numeric_series_with_rule_thresholds_and_per_day_activity()
+    {
+        var c = await Body(await api.As("doctor").GetAsync($"/episodes/{MarkoEpisode}/charts"));
+        var vars = c.GetProperty("variables").EnumerateArray().ToDictionary(v => v.GetProperty("questionId").GetString()!);
+        Assert.Contains("pain", vars.Keys);
+        Assert.DoesNotContain("symptoms", vars.Keys);                       // multichoice answers are not charted
+        var luka = await Body(await api.As("doctor").GetAsync("/episodes/00000000-0000-0000-0000-00000000e004/charts"));
+        Assert.Contains(luka.GetProperty("variables").EnumerateArray(), v => v.GetProperty("questionId").GetString() == "temperature");   // the fever day
+        var pain = vars["pain"];
+        Assert.True(pain.GetProperty("points").GetArrayLength() >= 5);
+        Assert.Contains(pain.GetProperty("rules").EnumerateArray(), r => r.GetProperty("op").GetString() == ">=" && r.GetProperty("value").GetDouble() == 8 && r.GetProperty("severity").GetString() == "attention");
+
+        var days = c.GetProperty("days").EnumerateArray().ToList();
+        Assert.Equal(c.GetProperty("dayNumber").GetInt32(), days.Count);
+        Assert.True(days[^1].GetProperty("urgent").GetInt32() >= 1);       // marko's urgent flag today
+        Assert.True(days[^1].GetProperty("checkIns").GetInt32() >= 1);
+
+        // ana: a three-day gap about a week ago shows up as days without check-ins
+        var ana = (await Body(await api.As("doctor").GetAsync($"/episodes/{AnaEpisode}/charts"))).GetProperty("days").EnumerateArray().ToList();
+        var today = Eskrb.Api.Services.AppTime.Today;
+        Assert.Equal(3, ana.Count(d => d.GetProperty("checkIns").GetInt32() == 0 && DateOnly.Parse(d.GetProperty("date").GetString()!) >= today.AddDays(-7) && DateOnly.Parse(d.GetProperty("date").GetString()!) <= today.AddDays(-5)));
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await api.As("marko").GetAsync($"/episodes/{MarkoEpisode}/charts")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await api.CreateClient().GetAsync($"/episodes/{MarkoEpisode}/charts")).StatusCode);
+    }
+
+    // ---------- photo timeline ----------
+
+    [Fact]
+    public async Task Photo_timeline_groups_check_in_photos_by_question_and_loose_photos_separately()
+    {
+        // seeded ana has a wound photo every few days (synthetic images), oldest first
+        var series = (await Body(await api.As("doctor").GetAsync($"/episodes/{AnaEpisode}/photos"))).EnumerateArray().ToList();
+        var wound = series.First(x => x.GetProperty("questionId").GetString() == "woundPhoto");
+        var photos = wound.GetProperty("photos").EnumerateArray().ToList();
+        Assert.True(photos.Count >= 3);
+        Assert.Equal(photos.Select(x => x.GetProperty("at").GetDateTime()).OrderBy(x => x).ToList(), photos.Select(x => x.GetProperty("at").GetDateTime()).ToList());
+        Assert.Equal(HttpStatusCode.OK, (await api.As("doctor").GetAsync(photos[0].GetProperty("mediaUrl").GetString()!)).StatusCode);
+
+        // the seed puts a photo story on at least three patients
+        foreach (var episode in new[] { MarkoEpisode, "00000000-0000-0000-0000-00000000e003", "00000000-0000-0000-0000-00000000e004" })
+        {
+            var s = (await Body(await api.As("doctor").GetAsync($"/episodes/{episode}/photos"))).EnumerateArray().ToList();
+            Assert.True(s.First(x => x.GetProperty("questionId").GetString() == "woundPhoto").GetProperty("photos").GetArrayLength() >= 3, episode);
+        }
+
+        // a loose photo note appears under "_other", never under the question
+        var form = new MultipartFormDataContent();
+        var png = new ByteArrayContent(Png); png.Headers.ContentType = new("image/png");
+        form.Add(png, "photo", "p.png");
+        Assert.Equal(HttpStatusCode.Created, (await api.As("luka").PostAsync("/episodes/00000000-0000-0000-0000-00000000e004/logs", form)).StatusCode);
+        var lukaSeries = (await Body(await api.As("luka").GetAsync("/episodes/00000000-0000-0000-0000-00000000e004/photos"))).EnumerateArray().ToList();
+        Assert.Contains(lukaSeries, x => x.GetProperty("questionId").GetString() == "_other");
+        Assert.DoesNotContain(lukaSeries.Single(x => x.GetProperty("questionId").GetString() == "woundPhoto").GetProperty("photos").EnumerateArray(),
+            x => x.GetProperty("checkInId").ValueKind == JsonValueKind.Null);   // question photos belong to check-ins; the loose one is only under _other
+
+        // access: another patient cannot, staff outside the group cannot (404), anonymous is 401
+        Assert.Equal(HttpStatusCode.NotFound, (await api.As("marko").GetAsync($"/episodes/{AnaEpisode}/photos")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await api.CreateClient().GetAsync($"/episodes/{AnaEpisode}/photos")).StatusCode);
+    }
 
     // ---------- photos ----------
 
@@ -668,7 +795,7 @@ public class ApiTests(ApiFixture api) : IClassFixture<ApiFixture>
     [Fact]
     public async Task Timeline_hides_flags_from_the_patient_but_shows_them_to_staff()
     {
-        api.Extractor.Behavior = _ => new() { ["calfPain"] = new(J("true"), "meča") };
+        api.Extractor.Behavior = _ => new() { ["symptoms"] = new(J("[\"calf\"]"), "meča") };
         await TextLog("nina", "Boli me meča.", episode: "00000000-0000-0000-0000-00000000e003");
         api.Extractor.Behavior = _ => [];
         await api.As("nina").PostAsJsonAsync("/episodes/00000000-0000-0000-0000-00000000e003/checkins", new { answers = new { pain = 2 } });

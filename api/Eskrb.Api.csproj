@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <None Update="Data\Seed\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Data\Seed\photos\*.jpg" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

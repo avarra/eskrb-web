@@ -11,7 +11,8 @@ watchEffect(async () => {
 })
 
 function range(q: ProtocolQuestion) {
-  if (q.type === 'choice') return q.options?.join(' / ') ?? ''
+  if (q.type === 'choice' || q.type === 'multichoice')
+    return (q.options ?? []).map((o) => q.labels?.[o] ?? o).join(' / ')
   if (q.min !== null || q.max !== null)
     return `${q.min ?? ''}–${q.max ?? ''}${q.unit ? ' ' + q.unit : ''}`
   return q.unit ?? ''
@@ -39,7 +40,15 @@ function range(q: ProtocolQuestion) {
           <td>{{ q.id }}</td>
           <td>{{ q.type }}{{ q.required ? ' (required)' : '' }}</td>
           <td>{{ range(q) }}</td>
-          <td>{{ q.text }}</td>
+          <td>
+            {{ q.text }}
+            <div v-if="q.showIf" class="meta">
+              only if <code>{{ q.showIf.question }} {{ q.showIf.op }} {{ q.showIf.value }}</code>
+            </div>
+            <div v-if="q.immediateAlert" class="meta">
+              safety stop on {{ q.immediateAlert.options.join(', ') }}
+            </div>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -57,7 +66,10 @@ function range(q: ProtocolQuestion) {
         <tr v-for="r in protocol.rules" :key="r.id">
           <td>{{ r.id }}</td>
           <td>
-            <code>{{ r.field }} {{ r.op }} {{ r.value }}</code>
+            <code
+              >{{ r.field }} {{ r.op }}
+              {{ Array.isArray(r.value) ? r.value.join(' | ') : r.value }}</code
+            >
           </td>
           <td>{{ r.severity }}</td>
         </tr>

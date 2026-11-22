@@ -4,7 +4,10 @@
 # The API rebuilds its schema and reseeds on startup (api/Data/Seeder.cs) whenever the SQLite
 # file is missing, so "reseed" = back up and remove the persisted state, then (optionally) start.
 #
-# Usage: ./reseed.sh [--run] [--force]
+# Usage: ./reseed.sh [--demo] [--run] [--force]
+#   --demo   seed the DEMO profile (user-secret Seed:Profile=demo): 10 patients at different stages of recovery, each with a
+#            history up to yesterday and NO check-in today (the judges do it), all paired as buddies. Default = the dev profile
+#            (4 patients incl. today's check-ins). The chosen profile is remembered in user-secrets until the next reseed.
 #   --run    start the API afterwards (dotnet run --project api)
 #   --force  don't refuse when something is listening on the API port
 #
@@ -21,8 +24,12 @@
 #
 # What counts as persisted state (KEEP THIS LIST IN SYNC when adding any):
 #   - SQLite DB (+ -wal/-shm)              : users, tokens, protocols, groups, memberships, episodes, check-ins, flags
-#   - user-secrets Seed:Tokens:*           : (ana, marko, nina, luka, doctor, senior, admin) copied from TOKENS in this file on every run
+#   - user-secrets Seed:Tokens:*           : (every key in TOKENS: the patients of both profiles, doctor, senior, admin) copied from TOKENS in this file on every run
+#   - user-secrets Seed:Profile            : dev | demo, set on every run from --demo
 #   - photo directory (MEDIA_PATH)         : patient photos (DiskMediaStore); deleted on reseed since the DB rows are gone
+#   - push devices (PushDevices table)       : phones registered for push. The wipe would unlink them, so before removing the DB this
+#     script exports them to <DB dir>/preserved-push-devices.json (needs the sqlite3 CLI) and the API re-imports them on its next
+#     start (matching users keep their seeded ids). Not kept: if sqlite3 is missing (a warning is printed).
 #   - user-secrets Soniox:ApiKey (NOT in this file, it is a real paid key): never touched by reseed; set it once with
 #     `dotnet user-secrets set Soniox:ApiKey <key> --project api`
 #   - user-secrets OpenAI:ApiKey (NOT in this file, paid key): never touched by reseed; set once with
@@ -44,11 +51,19 @@ declare -A TOKENS=(
   [senior]=esk_foEp0Pcr3f8WY_oc0otnDLUAcB6C5z9321uh2grmS24
   [doctor]=esk_MjaRlQT6s2xdhDu8hlwSl3Ci0HWDoM1Mndn-6lTNurk
   [admin]=esk_-gbkKf_ZfnQNrdRNO47mfknlNt-u76TPqA0dBKn_gpU
+  [janez]=esk_BeXqRa9AEUv73gmpD7PbybtFjlpCdvfGIZjpoKqVpzo
+  [marija]=esk_1raFxhIU76cMmoA8cbJxRJ2aM9lylN2wD8B4K5kz_eE
+  [franc]=esk_fGBaQ473EqL0I8N1SG3-F8Mw9om3CdesS2cmokH78Vk
+  [ivana]=esk_F4Y1TF1yKKRTGj_OhG8rD4KI9GpTrfqlEHOeAKk-Jzk
+  [tone]=esk_YcE_zYBj5i3FISCEdMgDZER8eFEPXoNIks00YMnNUK4
+  [milena]=esk_QE1LRpIkKSdGTWrOqCKsJK6mqOvoiotnxo5F2kpBNbY
 )
 RUN=0
 FORCE=0
+PROFILE=dev
 for arg in "$@"; do
   case "$arg" in
+    --demo) PROFILE=demo ;;
     --run) RUN=1 ;;
     --force) FORCE=1 ;;
     -h|--help) sed -n '2,/^set -e/p' "$0" | sed '$d'; exit 0 ;;
@@ -71,6 +86,20 @@ if [ "$FORCE" -eq 0 ] && command -v ss >/dev/null && ss -ltn "sport = :$PORT" 2>
   exit 1
 fi
 
+# Keep phones linked to their users: export the push devices before the DB is wiped (the API re-imports them on start).
+preserved="$(dirname "$DB_PATH")/preserved-push-devices.json"
+if [ -e "$DB_PATH" ]; then
+  if command -v sqlite3 >/dev/null; then
+    rows="$(sqlite3 -json "$DB_PATH" 'SELECT Id, UserId, ExpoToken, Platform, DeviceId, CreatedAt, UpdatedAt FROM PushDevices' 2>/dev/null || true)"
+    if [ -n "$rows" ] && [ "$rows" != "[]" ]; then
+      printf '%s\n' "$rows" > "$preserved"
+      echo "Kept $(printf '%s' "$rows" | grep -o '"ExpoToken"' | wc -l) push device(s) -> $preserved (re-imported on the next API start)"
+    fi
+  else
+    echo "WARNING: sqlite3 not found, registered push devices will NOT survive this reseed (phones re-register on app start)." >&2
+  fi
+fi
+
 backup_dir="$(dirname "$DB_PATH")/backups"
 if [ -e "$DB_PATH" ]; then
   mkdir -p "$backup_dir"
@@ -89,6 +118,8 @@ if [ -n "$MEDIA_PATH" ] && [ "$MEDIA_PATH" != "/" ] && [ -d "$MEDIA_PATH" ]; the
 fi
 
 set_tokens
+dotnet user-secrets set "Seed:Profile" "$PROFILE" --project api >/dev/null
+echo "Seed profile: $PROFILE"
 
 if [ "$RUN" -eq 1 ]; then
   echo "Starting API (fresh DB is created and seeded on startup)..."

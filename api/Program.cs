@@ -97,7 +97,7 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<EskrbDb>();
     var log = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Seeder");
-    await Seeder.SeedAsync(db, app.Configuration, log);
+    await Seeder.SeedAsync(db, app.Configuration, log, scope.ServiceProvider.GetRequiredService<Eskrb.Api.Services.Media.IMediaStore>());
 }
 
 app.UseExceptionHandler();   // unhandled exception -> 500 problem details (no stack trace, no internals)

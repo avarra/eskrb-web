@@ -51,7 +51,7 @@ Live Swagger UI at `/`, OpenAPI JSON at `/openapi/v1.json`. Swagger's "Try it ou
 ## Notes from staff and the meds question
 
 - `GET /me/episode` has `notes`: `[{id, kind: "medication"|"advice", title, body, createdAt, updatedAt}]` (private doctor notes are never sent). Show them to the patient (e.g. a "My instructions" screen).
-- When the episode has a `medication` note, `protocol.questions` also contains `medsTaken` (boolean, "Ali ste danes vzeli zdravila...?"). Render it like any boolean and send it in `answers`; "no" raises an attention flag. It disappears when staff remove the medication note, so always render the questions the API returns.
+- Medication notes are instructions only now: the daily check-in always asks the `meds` question. See `docs/checkin-questions.md` for the full question contract (conditional `showIf`, `multichoice`, `labels`, safety stop).
 
 ## Push notifications (registration; an admin can already send manual pushes from the dashboard)
 

@@ -48,7 +48,7 @@ public class MeController(EskrbDb db) : ControllerBase
 
         var notes = (await db.EpisodeNotes.Where(n => n.EpisodeId == ep.Id && n.Kind != NoteKinds.Private).ToListAsync())
             .OrderBy(n => n.CreatedAt).Select(NotesController.ToDto).ToList();
-        var p = ep.Protocol.WithMedication(notes.Any(n => n.Kind == NoteKinds.Medication));
+        var p = ep.Protocol;
         var done = await db.CheckIns.AnyAsync(c => c.EpisodeId == ep.Id && c.Date == today);
         var readAt = (await db.EpisodeReadStates.FindAsync(ep.Id))?.PatientLastReadAt ?? DateTime.MinValue;
         var unread = await db.Messages.CountAsync(m => m.EpisodeId == ep.Id && m.FromUserId != UserId && m.CreatedAt > readAt);

@@ -88,7 +88,7 @@ Design language: blue ground, one big white action. Buddy card (initial avatar, 
 A "Buddies" page (staff): pair table (view thread, unpair, "reported" badge) and a "New pair" modal with suggestions and the consent checkbox. Thread view is read-only with a hide button per message.
 
 ## Seed and demo
-One seeded pair (probably luka + nina; nina has missed check-ins, so the neutral state shows) and two free patients so staff can pair them live during the demo.
+One seeded pair, ana + luka, with a short conversation (typed, dictated and cheers; the last two messages from luka are unread). ana is mid-recovery (day 20) with a 5-day check-in streak after a short gap a week ago. marko and nina stay free so staff can pair them live during the demo (nina has missed check-ins, so the neutral state shows).
 
 ## Effort
 About 3 h backend with tests, 1.5 h dashboard, about 3 h mobile screen (teammate).
@@ -98,7 +98,7 @@ About 3 h backend with tests, 1.5 h dashboard, about 3 h mobile screen (teammate
 - `GET /me/buddy` `cheers` is the whole catalogue (when the pair is running; only `congrats-finish` for a finished buddy). The client shows the ones whose `moment` is in `moments` plus `always`, and applies the nudge hour itself. Sending a cheer that does not fit right now is 409; caps are 429: 3 cheers/day, 1 nudge-type cheer/day, `ask` once per 3 days, 30 texts/hour.
 - Status `ended`: `buddy` is null when a person ended it (left/staff); a pair whose episode simply ended keeps `buddy` (so "finished" can be shown) and only allows the one `congrats-finish` cheer.
 - `GET /me/buddy/messages?after=<ISO instant>` returns only newer messages. Hidden messages never reach patients.
-- Seeded on a fresh DB: luka + nina are paired (a cheer and a text from luka); ana and marko are free for a live demo pairing.
+- Seeded on a fresh DB: ana + luka are paired with about ten messages over four days; marko and nina are free for a live demo pairing.
 
 ## Not in v0
 Auto-matching, leaderboards, groups, photos, sharing pain/mood, LLM scan of buddy chat, websockets.

@@ -54,9 +54,17 @@ public class OpenAiExtractor(HttpClient http, IConfiguration config) : IExtracto
                 "scale" => new JsonObject { ["type"] = "integer" },
                 "number" => new JsonObject { ["type"] = "number" },
                 "boolean" => new JsonObject { ["type"] = "boolean" },
+                "multichoice" => new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray((q.Options ?? []).Select(o => (JsonNode)o).ToArray()) },
+                },
                 _ => new JsonObject { ["type"] = "string", ["enum"] = new JsonArray((q.Options ?? []).Select(o => (JsonNode)o).ToArray()) },
             };
             var hint = q.Type == "scale" ? $" (whole number {q.Min}-{q.Max})" : q.Unit is null ? "" : $" (in {q.Unit})";
+            if (q.Type is "choice" or "multichoice" && q.Labels is { Count: > 0 })
+                hint += ". Options (id = meaning): " + string.Join("; ", (q.Options ?? []).Select(o => $"{o} = {q.Labels.GetValueOrDefault(o, o)}"));
+            if (q.Type == "multichoice") hint += ". Pick every option the note clearly states; never combine an exclusive option with others";
             props[q.Id] = new JsonObject
             {
                 ["description"] = q.Text + hint,

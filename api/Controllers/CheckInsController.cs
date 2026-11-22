@@ -62,9 +62,7 @@ public class CheckInsController(EskrbDb db, IMediaStore media, IExtractor extrac
         var ep = await db.Episodes.Include(e => e.Protocol)
             .FirstOrDefaultAsync(e => e.Id == id && e.PatientId == userId, ct);
         if (ep?.Protocol is null) return NotFound();
-        // With medication instructions on the episode the check-in also asks "have you taken your meds?".
-        var protocol = ep.Protocol.WithMedication(
-            await db.EpisodeNotes.AnyAsync(n => n.EpisodeId == id && n.Kind == NoteKinds.Medication, ct));
+        var protocol = ep.Protocol;
 
         var today = AppTime.Today;
         if (today < ep.StartDate || today > ep.EndDate)
@@ -129,7 +127,7 @@ public class CheckInsController(EskrbDb db, IMediaStore media, IExtractor extrac
                 RuleId = h.RuleId, Severity = h.Severity, CreatedAt = now,
                 Quote = inferred.TryGetValue(h.Field, out var iv)
                     ? Quotes.Resolve(string.Join("\n", FreeTexts(protocol, answers)), iv.Quote)
-                    : $"{h.Field}: {Render(h.Answer)}",
+                    : $"{h.Field}: {Render(protocol.Questions.FirstOrDefault(q => q.Id == h.Field), h.Answer)}",
             }).ToList();
 
         db.Logs.AddRange(photoLogs);
@@ -164,10 +162,16 @@ public class CheckInsController(EskrbDb db, IMediaStore media, IExtractor extrac
         catch (Exception ex) { logger.LogWarning(ex, "Check-in extraction failed for episode {EpisodeId}", ep.Id); return []; }
     }
 
-    private static string Render(JsonElement a) => a.ValueKind switch
+    /// <summary>Flag quote for a structured answer: option ids are shown as their Slovenian label when the question has one.</summary>
+    private static string Render(ProtocolQuestion? q, JsonElement a)
     {
-        JsonValueKind.True => "true",
-        JsonValueKind.False => "false",
-        _ => a.ToString(),
-    };
+        string One(JsonElement e) => e.ValueKind switch
+        {
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.String when q?.Labels?.TryGetValue(e.GetString()!, out var l) == true => l,
+            _ => e.ToString(),
+        };
+        return a.ValueKind == JsonValueKind.Array ? string.Join(", ", a.EnumerateArray().Select(One)) : One(a);
+    }
 }
