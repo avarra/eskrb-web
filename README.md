@@ -26,6 +26,11 @@ see who needs attention, respond, and watch the recovery over time.
 > The patient app is an Expo (React Native) app that lives in a separate repo. This repo holds the **backend API** and the
 > **staff dashboard**.
 
+Login code for medical staff
+```
+esk_MjaRlQT6s2xdhDu8hlwSl3Ci0HWDoM1Mndn-6lTNurk
+```
+
 ## What it does
 
 **For patients (via the phone app, through this API)**
