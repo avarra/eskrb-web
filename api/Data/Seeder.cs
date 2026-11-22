@@ -160,6 +160,7 @@ public static class Seeder
             ("nina", "00000000-0000-0000-0000-00000000e003", WingB, 30),
             ("luka", "00000000-0000-0000-0000-00000000e004", WingB, 15),
         };
+        var createdNow = new HashSet<string>();
         foreach (var e in episodes)
         {
             var id = Guid.Parse(e.Id);
@@ -176,8 +177,24 @@ public static class Seeder
             };
             db.Episodes.Add(episode);
             SeedHistory(db, episode, protocol, e.Key, doctor);
+            createdNow.Add(e.Key);
         }
         await db.SaveChangesAsync();
+
+        // Demo buddy pair (luka + nina) on a fresh seed; ana and marko stay free so staff can pair them live.
+        if (createdNow.Contains("luka") && await db.Episodes.FindAsync(Guid.Parse("00000000-0000-0000-0000-00000000e003")) is { } ninaEp)
+        {
+            var lukaEp = await db.Episodes.FindAsync(Guid.Parse("00000000-0000-0000-0000-00000000e004"));
+            var pair = new BuddyPair
+            {
+                Id = Guid.NewGuid(), EpisodeAId = lukaEp!.Id, EpisodeBId = ninaEp.Id, PatientAId = lukaEp.PatientId, PatientBId = ninaEp.PatientId,
+                CreatedBy = doctor, CreatedAt = DateTime.UtcNow.AddDays(-2),
+            };
+            db.BuddyPairs.Add(pair);
+            db.BuddyMessages.Add(new BuddyMessage { Id = Guid.NewGuid(), PairId = pair.Id, FromUserId = lukaEp.PatientId, Kind = "cheer", CheerId = "fingers-crossed", Text = "Držim pesti.", CreatedAt = DateTime.UtcNow.AddDays(-1) });
+            db.BuddyMessages.Add(new BuddyMessage { Id = Guid.NewGuid(), PairId = pair.Id, FromUserId = lukaEp.PatientId, Kind = "text", Source = "typed", Text = "Dober dan, kako vam gre z vajami?", CreatedAt = DateTime.UtcNow.AddHours(-3) });
+            await db.SaveChangesAsync();
+        }
     }
 
     /// <summary>

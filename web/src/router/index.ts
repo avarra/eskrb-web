@@ -33,6 +33,12 @@ const router = createRouter({
       meta: { staff: true },
     },
     {
+      path: '/buddies',
+      name: 'buddies',
+      component: () => import('../views/BuddiesView.vue'),
+      meta: { staff: true },
+    },
+    {
       path: '/groups',
       name: 'groups',
       component: () => import('../views/GroupsView.vue'),

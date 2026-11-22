@@ -14,12 +14,13 @@ function logout() {
 <template>
   <div v-if="auth.user" class="shell">
     <aside class="rail">
-      <div class="brand">eSkrb</div>
+      <div class="brand"><img src="/favicon.svg" alt="" />eSkrb</div>
       <nav>
         <template v-if="auth.isStaff">
           <RouterLink to="/triage">Triage</RouterLink>
           <RouterLink to="/episodes">Episodes</RouterLink>
           <RouterLink to="/patients">Patients</RouterLink>
+          <RouterLink to="/buddies">Buddies</RouterLink>
           <RouterLink to="/groups">Doctor groups</RouterLink>
           <RouterLink to="/protocols">Protocols</RouterLink>
           <RouterLink v-if="auth.isAdmin" to="/users">Users</RouterLink>
@@ -58,9 +59,18 @@ function logout() {
   color: var(--ground-ink);
 }
 .brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   font: 700 24px/30px var(--font);
   letter-spacing: -0.3px;
   padding: 0 var(--space-3) var(--space-5);
+}
+.brand img {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--tonal-line);
 }
 nav {
   display: flex;

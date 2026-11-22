@@ -23,6 +23,8 @@ public class EskrbDb(DbContextOptions<EskrbDb> options) : DbContext(options)
     public DbSet<Escalation> Escalations => Set<Escalation>();
     public DbSet<EpisodeReview> EpisodeReviews => Set<EpisodeReview>();
     public DbSet<PushDevice> PushDevices => Set<PushDevice>();
+    public DbSet<BuddyPair> BuddyPairs => Set<BuddyPair>();
+    public DbSet<BuddyMessage> BuddyMessages => Set<BuddyMessage>();
     public DbSet<EpisodeReadState> EpisodeReadStates => Set<EpisodeReadState>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -89,6 +91,20 @@ public class EskrbDb(DbContextOptions<EskrbDb> options) : DbContext(options)
             d.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId);
             d.HasIndex(x => x.ExpoToken).IsUnique();
             d.HasIndex(x => x.UserId);
+        });
+
+        b.Entity<BuddyPair>(p =>
+        {
+            p.HasOne(x => x.EpisodeA).WithMany().HasForeignKey(x => x.EpisodeAId).OnDelete(DeleteBehavior.Restrict);
+            p.HasOne(x => x.EpisodeB).WithMany().HasForeignKey(x => x.EpisodeBId).OnDelete(DeleteBehavior.Restrict);
+            p.HasOne(x => x.Creator).WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
+            p.HasIndex(x => x.PatientAId);
+            p.HasIndex(x => x.PatientBId);
+        });
+        b.Entity<BuddyMessage>(m =>
+        {
+            m.HasOne(x => x.Pair).WithMany().HasForeignKey(x => x.PairId);
+            m.HasIndex(x => new { x.PairId, x.CreatedAt });
         });
 
         b.Entity<EpisodeReadState>().HasKey(x => x.EpisodeId);

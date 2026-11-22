@@ -219,6 +219,43 @@ export interface NotifyResult {
   disabled: boolean
   ticketIds: string[]
 }
+export interface BuddySide {
+  episodeId: string
+  patientId: string
+  patientName: string
+  dayNumber: number
+  groupName: string
+}
+export interface BuddyPair {
+  id: string
+  a: BuddySide
+  b: BuddySide
+  protocolName: string
+  createdByName: string
+  createdAt: string
+  status: 'active' | 'ended'
+  endReason: 'left' | 'staff' | 'episode_ended' | null
+  messages: number
+  reported: number
+}
+export interface BuddyCandidate {
+  episodeId: string
+  patientId: string
+  patientName: string
+  dayNumber: number
+  groupName: string
+  startDiffDays: number
+}
+export interface BuddyThreadMessage {
+  id: string
+  fromName: string
+  kind: 'cheer' | 'text'
+  text: string
+  source: 'typed' | 'dictated' | null
+  createdAt: string
+  reported: boolean
+  hidden: boolean
+}
 export interface Message {
   id: string
   fromUserId: string
@@ -258,10 +295,19 @@ export const directory = {
   timeline: (episodeId: string) => api<TimelineItem[]>(`/episodes/${episodeId}/timeline`),
   reviews: (episodeId: string) => api<ReviewRow[]>(`/staff/episodes/${episodeId}/reviews`),
   pushDevices: () => api<PushUser[]>('/admin/push-devices'),
+  buddies: () => api<BuddyPair[]>('/staff/buddies'),
+  buddyCandidates: (episodeId: string) =>
+    api<BuddyCandidate[]>(`/staff/buddies/candidates?episodeId=${episodeId}`),
+  buddyThread: (pairId: string) => api<BuddyThreadMessage[]>(`/staff/buddies/${pairId}/messages`),
   triage: () => api<Triage>('/staff/triage'),
   notes: (episodeId: string) => api<Note[]>(`/episodes/${episodeId}/notes`),
   escalations: (episodeId: string) => api<Escalation[]>(`/episodes/${episodeId}/escalations`),
   // --- writes ---
+  createBuddyPair: (b: { episodeAId: string; episodeBId: string; consentConfirmed: boolean }) =>
+    api<BuddyPair>('/staff/buddies', json('POST', b)),
+  unpairBuddies: (pairId: string) => api<void>(`/staff/buddies/${pairId}`, json('DELETE')),
+  hideBuddyMessage: (pairId: string, messageId: string) =>
+    api<void>(`/staff/buddies/${pairId}/messages/${messageId}`, json('DELETE')),
   sendNotification: (b: {
     audience: 'user' | 'patients' | 'staff'
     userId?: string

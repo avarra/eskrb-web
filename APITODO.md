@@ -45,3 +45,4 @@ Everything is admin-only unless noted. Keep this file current: delete items when
 - (done) Episode notes (medication/advice/private) with the meds check-in question, escalation to the next group level, triage board, review, unread count, dashboard restyle.
 - [ ] Notify (push) on escalation and on new patient-visible notes. [ ] Escalation history on the triage card after resolve. [ ] Seeded history for the new `senior`/escalation demo. [ ] Mobile: show notes + the `medsTaken` question.
 - (done) Push service + device registration + admin manual send (on by default; `Notifications:Enabled=false` is the kill switch). [ ] Wire triggers (message, note, escalation, urgent flag), poll receipts, retry/backoff on 429/5xx, set `Expo:AccessToken`, mobile: register the token.
+- (done) Recovery twin backend + dashboard (docs/buddy.md). [ ] Mobile buddy screen, native review of the Slovenian cheer copy, in-app consent instead of the staff checkbox (later).

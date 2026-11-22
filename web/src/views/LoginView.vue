@@ -27,7 +27,10 @@ async function submit() {
 
 <template>
   <div class="ground">
-    <div class="brand">eSkrb</div>
+    <div class="brand">
+      <img src="/favicon.svg" alt="" />
+      eSkrb
+    </div>
     <form class="card" @submit.prevent="submit">
       <h1>Sign in</h1>
       <p class="meta">Use the access token you were given for the staff dashboard.</p>
@@ -54,9 +57,19 @@ async function submit() {
     radial-gradient(120% 40% at 50% 0%, rgba(255, 255, 255, 0.1), transparent 70%), var(--ground);
 }
 .brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
   color: #fff;
   font: 700 36px/40px var(--font);
   letter-spacing: -0.5px;
+}
+.brand img {
+  width: 88px;
+  height: 88px;
+  border-radius: 22px;
+  box-shadow: 0 0 0 1px var(--tonal-line);
 }
 .card {
   width: 100%;
