@@ -10,6 +10,8 @@
     { "id": "calfPain", "type": "boolean", "text": "Ali čutite bolečino ali oteklino v mečih?" },
     { "id": "breathing", "type": "boolean", "text": "Ali težko dihate ali čutite bolečino v prsih?" },
     { "id": "walking", "type": "boolean", "text": "Ali ste danes hodili z berglami?" },
+    { "id": "woundPhoto", "type": "photo", "text": "Slikajte rano." },
+    { "id": "notes", "type": "text", "text": "Želite še kaj dodati? (neobvezno)" },
     { "id": "wellbeing", "type": "scale", "min": 1, "max": 5, "text": "Kako se danes počutite?" }
   ],
   "rules": [

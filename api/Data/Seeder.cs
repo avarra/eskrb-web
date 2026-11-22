@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Eskrb.Api.Auth;
 using Eskrb.Api.Domain;
+using Eskrb.Api.Rules;
 using Eskrb.Api.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,7 +20,9 @@ public static class Seeder
         new("ana", Guid.Parse("00000000-0000-0000-0000-000000000001"), "Ana Novak", UserRole.Patient),
         new("marko", Guid.Parse("00000000-0000-0000-0000-000000000002"), "Marko Horvat", UserRole.Patient),
         new("nina", Guid.Parse("00000000-0000-0000-0000-000000000003"), "Nina Kovač", UserRole.Patient),
+        new("luka", Guid.Parse("00000000-0000-0000-0000-000000000004"), "Luka Krajnc", UserRole.Patient),
         new("doctor", Guid.Parse("00000000-0000-0000-0000-0000000000a1"), "Dr. Maja Zupan", UserRole.Staff),
+        new("senior", Guid.Parse("00000000-0000-0000-0000-0000000000a2"), "Dr. Peter Zorko", UserRole.Staff),
         new("admin", Guid.Parse("00000000-0000-0000-0000-0000000000a0"), "Admin", UserRole.Admin),
     ];
 
@@ -138,6 +141,11 @@ public static class Seeder
         }
         await Group(WingA, "Orthopedics - Wing A");
         await Group(WingB, "Orthopedics - Wing B");
+        // A second, more senior doctor (level 2) in both wings, so escalation has someone to escalate to.
+        var senior = Users.Single(u => u.Key == "senior").Id;
+        foreach (var g in new[] { WingA, WingB })
+            if (!await db.DoctorGroupMembers.AnyAsync(m => m.GroupId == g && m.UserId == senior))
+                db.DoctorGroupMembers.Add(new DoctorGroupMember { Id = Guid.NewGuid(), GroupId = g, UserId = senior, Level = 2, Title = "Senior doctor" });
         await db.SaveChangesAsync();
 
         var today = AppTime.Today;
@@ -150,13 +158,14 @@ public static class Seeder
             ("ana", "00000000-0000-0000-0000-00000000e001", WingA, 20),
             ("marko", "00000000-0000-0000-0000-00000000e002", WingA, 10),
             ("nina", "00000000-0000-0000-0000-00000000e003", WingB, 30),
+            ("luka", "00000000-0000-0000-0000-00000000e004", WingB, 15),
         };
         foreach (var e in episodes)
         {
             var id = Guid.Parse(e.Id);
             if (await db.Episodes.AnyAsync(x => x.Id == id)) continue;
             var start = today.AddDays(-(e.Day - 1));
-            db.Episodes.Add(new Episode
+            var episode = new Episode
             {
                 Id = id,
                 PatientId = Users.Single(u => u.Key == e.Key).Id,
@@ -164,9 +173,92 @@ public static class Seeder
                 DoctorGroupId = e.Group,
                 StartDate = start,
                 EndDate = start.AddDays(protocol.DurationDays),
-            });
+            };
+            db.Episodes.Add(episode);
+            SeedHistory(db, episode, protocol, e.Key, doctor);
         }
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Demo history for a newly created episode, so each triage column has someone in it:
+    /// ana = stable, marko = urgent unresolved flags, nina = stopped checking in, luka = waiting for a reply to a staff message.
+    /// Flags come from the real rules engine; only the answers are made up.
+    /// </summary>
+    private static void SeedHistory(EskrbDb db, Episode ep, Protocol protocol, string key, Guid doctor)
+    {
+        var today = AppTime.Today;
+        var days = today.DayNumber - ep.StartDate.DayNumber;   // 0 = first day
+
+        void CheckIn(DateOnly date, int pain, double temp, string wound, bool calf, int wellbeing, bool reviewed, bool breathing = false)
+        {
+            var answers = new Dictionary<string, JsonElement>
+            {
+                ["pain"] = JsonSerializer.SerializeToElement(pain),
+                ["temperature"] = JsonSerializer.SerializeToElement(temp),
+                ["wound"] = JsonSerializer.SerializeToElement(wound),
+                ["calfPain"] = JsonSerializer.SerializeToElement(calf),
+                ["breathing"] = JsonSerializer.SerializeToElement(breathing),
+                ["walking"] = JsonSerializer.SerializeToElement(true),
+                ["wellbeing"] = JsonSerializer.SerializeToElement(wellbeing),
+            };
+            var at = Past(AppTime.AtLocal(date, 9));
+            var c = new CheckIn
+            {
+                Id = Guid.NewGuid(), EpisodeId = ep.Id, Date = date, Answers = answers, AuthoredBy = ep.PatientId, CreatedAt = at,
+                ReviewedAt = reviewed ? at.AddHours(3) : null, ReviewedBy = reviewed ? doctor : null,
+            };
+            db.CheckIns.Add(c);
+            foreach (var h in RulesEngine.Evaluate(answers, protocol.Rules))
+                db.Flags.Add(new Flag
+                {
+                    Id = Guid.NewGuid(), EpisodeId = ep.Id, SourceType = "checkin", SourceId = c.Id, RuleId = h.RuleId,
+                    Severity = h.Severity, Quote = $"{h.Field}: {h.Answer.ToString().ToLowerInvariant()}", CreatedAt = at,
+                    ResolvedAt = reviewed ? at.AddHours(3) : null,
+                });
+        }
+        void Message(Guid from, DateTime at, string body) =>
+            db.Messages.Add(new Message { Id = Guid.NewGuid(), EpisodeId = ep.Id, FromUserId = from, Body = body, CreatedAt = at });
+
+        static DateTime Past(DateTime utc) => utc > DateTime.UtcNow ? DateTime.UtcNow.AddMinutes(-1) : utc;
+        var first = ep.StartDate.AddDays(1);
+        switch (key)
+        {
+            case "ana": // recovering well, everything reviewed
+                for (var d = first; d <= today; d = d.AddDays(1))
+                    CheckIn(d, Math.Max(1, 6 - (d.DayNumber - ep.StartDate.DayNumber) / 4), 36.6, "dry", false, 4, reviewed: d < today);
+                break;
+            case "marko": // getting worse: calf pain today (urgent), a note about it
+                for (var d = first; d < today; d = d.AddDays(1))
+                    CheckIn(d, 4 + (d.DayNumber - ep.StartDate.DayNumber) / 3, 36.9, "dry", false, 3, reviewed: true);
+                CheckIn(today, 8, 37.4, "red", true, 2, reviewed: false);
+                var note = "Danes me zelo boli leva meča in koleno je bolj otekla.";
+                var logAt = Past(AppTime.AtLocal(today, 10));
+                var log = new Log
+                {
+                    Id = Guid.NewGuid(), EpisodeId = ep.Id, Type = "text", Source = "typed", Text = note, AuthoredBy = ep.PatientId,
+                    CreatedAt = logAt, Extracted = new() { ["calfPain"] = JsonSerializer.SerializeToElement(true) },
+                };
+                db.Logs.Add(log);
+                db.Flags.Add(new Flag
+                {
+                    Id = Guid.NewGuid(), EpisodeId = ep.Id, SourceType = "log", SourceId = log.Id, RuleId = "calf",
+                    Severity = "urgent", Quote = "zelo boli leva meča", CreatedAt = logAt,
+                });
+                break;
+            case "nina": // stopped checking in 3 days ago
+                for (var d = first; d <= today.AddDays(-3); d = d.AddDays(1))
+                    CheckIn(d, 2, 36.6, "dry", false, 4, reviewed: true);
+                break;
+            case "luka": // a fever was handled; staff asked for a follow-up and the patient has not answered
+                for (var d = first; d <= today; d = d.AddDays(1))
+                {
+                    var fever = d == today.AddDays(-1);
+                    CheckIn(d, 3, fever ? 38.2 : 36.8, "dry", false, 4, reviewed: true);
+                }
+                Message(doctor, Past(AppTime.AtLocal(today, 8)), "Včeraj ste imeli povišano temperaturo. Prosim, izmerite jo še zvečer in nam sporočite.");
+                break;
+        }
     }
 
     private static AuthToken NewToken(Guid userId, string hash) => new()

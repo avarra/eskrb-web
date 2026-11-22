@@ -16,7 +16,8 @@ public record ProtocolDto(
     List<ProtocolQuestion> Questions, List<ProtocolRule> Rules);
 
 public record EpisodeDto(
-    Guid Id, DateOnly StartDate, DateOnly EndDate, int DayNumber, bool CheckInDoneToday, ProtocolDto Protocol);
+    Guid Id, DateOnly StartDate, DateOnly EndDate, int DayNumber, bool CheckInDoneToday, ProtocolDto Protocol,
+    int UnreadMessages, List<NoteDto> Notes);
 
 [ApiController]
 [Authorize]
@@ -45,11 +46,15 @@ public class MeController(EskrbDb db) : ControllerBase
             .FirstOrDefaultAsync();
         if (ep?.Protocol is null) return NotFound();
 
-        var p = ep.Protocol;
+        var notes = (await db.EpisodeNotes.Where(n => n.EpisodeId == ep.Id && n.Kind != NoteKinds.Private).ToListAsync())
+            .OrderBy(n => n.CreatedAt).Select(NotesController.ToDto).ToList();
+        var p = ep.Protocol.WithMedication(notes.Any(n => n.Kind == NoteKinds.Medication));
         var done = await db.CheckIns.AnyAsync(c => c.EpisodeId == ep.Id && c.Date == today);
+        var readAt = (await db.EpisodeReadStates.FindAsync(ep.Id))?.PatientLastReadAt ?? DateTime.MinValue;
+        var unread = await db.Messages.CountAsync(m => m.EpisodeId == ep.Id && m.FromUserId != UserId && m.CreatedAt > readAt);
         return new EpisodeDto(
             ep.Id, ep.StartDate, ep.EndDate,
             today.DayNumber - ep.StartDate.DayNumber + 1, done,
-            new ProtocolDto(p.Id, p.Name, p.DurationDays, p.Questions, p.Rules));
+            new ProtocolDto(p.Id, p.Name, p.DurationDays, p.Questions, p.Rules), unread, notes);
     }
 }

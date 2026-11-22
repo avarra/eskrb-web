@@ -9,6 +9,12 @@ const router = createRouter({
     { path: '/', name: 'home', component: HomeView },
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
     {
+      path: '/triage',
+      name: 'triage',
+      component: () => import('../views/TriageView.vue'),
+      meta: { staff: true },
+    },
+    {
       path: '/episodes',
       name: 'episodes',
       component: () => import('../views/EpisodesView.vue'),
@@ -65,6 +71,7 @@ router.beforeEach((to) => {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
   if (to.name === 'login' && auth.isAuthenticated) return { name: 'home' }
+  if (to.name === 'home' && auth.isStaff) return { name: 'triage' }
   if ((to.meta.staff && !auth.isStaff) || (to.meta.admin && !auth.isAdmin)) return { name: 'home' }
 })
 

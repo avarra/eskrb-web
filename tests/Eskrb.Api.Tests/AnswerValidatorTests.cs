@@ -28,6 +28,25 @@ public class AnswerValidatorTests
         => Assert.Empty(Validate(("pain", "3"), ("temperature", "36.6"), ("wound", "\"dry\""), ("calfPain", "false")));
 
     [Fact]
+    public void Photo_questions_cannot_be_answered_in_json_and_required_ones_need_a_file()
+    {
+        var p = new Protocol
+        {
+            Id = "p", Name = "p", DurationDays = 1,
+            Questions =
+            [
+                new() { Id = "pain", Type = "scale", Text = "", Min = 0, Max = 10 },
+                new() { Id = "wound", Type = "photo", Text = "", Required = true },
+            ],
+        };
+        var pain = new Dictionary<string, JsonElement> { ["pain"] = J("3") };
+        Assert.Single(AnswerValidator.Validate(p, pain));                                   // wound missing
+        Assert.Empty(AnswerValidator.Validate(p, pain, new HashSet<string> { "wound" }));   // file attached
+        Assert.Single(AnswerValidator.Validate(p, new Dictionary<string, JsonElement> { ["wound"] = J("\"x\"") }, new HashSet<string> { "wound" }));
+        Assert.Empty(AnswerValidator.Validate(p, new Dictionary<string, JsonElement>(), new HashSet<string> { "wound" })); // photo-only check-in
+    }
+
+    [Fact]
     public void Empty_is_rejected() => Assert.Single(Validate());
 
     [Fact]

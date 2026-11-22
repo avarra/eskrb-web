@@ -16,6 +16,20 @@ public class MessagesController(EskrbDb db) : ControllerBase
 {
     private const int MaxLength = 2000;
 
+    /// <summary>Patient opened the messages: everything sent so far counts as read (resets <c>unreadMessages</c> on /me/episode).</summary>
+    [HttpPost("/episodes/{id:guid}/read")]
+    [Authorize(Roles = "patient")]
+    public async Task<IActionResult> MarkRead(Guid id)
+    {
+        var (ep, _) = await db.ResolveAsync(User, id);
+        if (ep is null) return NotFound();
+        var state = await db.EpisodeReadStates.FindAsync(ep.Id);
+        if (state is null) db.EpisodeReadStates.Add(new EpisodeReadState { EpisodeId = ep.Id, PatientLastReadAt = DateTime.UtcNow });
+        else state.PatientLastReadAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
     /// <summary>
     /// Staff -> patient (episodes they can see) or patient -> staff (own episode, while it is active).
     /// </summary>

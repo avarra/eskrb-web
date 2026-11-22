@@ -42,11 +42,19 @@ public class TimelineController(EskrbDb db) : ControllerBase
         List<FlagDto>? FlagsOf(Guid sourceId) => staff ? flags.GetValueOrDefault(sourceId) ?? [] : null;
 
         var items = new List<TimelineItem>();
-        foreach (var c in await db.CheckIns.Where(c => c.EpisodeId == id).ToListAsync())
+        var checkIns = await db.CheckIns.Where(c => c.EpisodeId == id).ToListAsync();
+        // Photos attached to a check-in question appear inside that check-in (answer = "/media/<logId>"), not as separate notes.
+        var inCheckIn = checkIns.SelectMany(c => c.Answers.Values)
+            .Where(v => v.ValueKind == JsonValueKind.String && v.GetString()!.StartsWith("/media/"))
+            .Select(v => v.GetString()!).ToHashSet();
+        foreach (var c in checkIns)
             items.Add(new("checkin", c.Id, c.CreatedAt, c.ReviewedAt != null, c.Answers, null, null, null, null, null, null, null, null, FlagsOf(c.Id)));
         foreach (var l in await db.Logs.Where(l => l.EpisodeId == id).ToListAsync())
+        {
+            if (inCheckIn.Contains($"/media/{l.Id}")) continue;
             items.Add(new("log", l.Id, l.CreatedAt, l.ReviewedAt != null, null, l.Type, l.Source, l.Text,
                 l.MediaKey is null ? null : $"/media/{l.Id}", staff ? l.Extracted : null, null, null, null, FlagsOf(l.Id)));
+        }
         foreach (var m in await db.Messages.Where(m => m.EpisodeId == id).Include(m => m.FromUser).ToListAsync())
             items.Add(new("message", m.Id, m.CreatedAt, null, null, null, null, null, null, null,
                 m.FromUser!.Name, m.FromUser.Role.ToString().ToLowerInvariant(), m.Body, null));

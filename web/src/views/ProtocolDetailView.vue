@@ -37,7 +37,7 @@ function range(q: ProtocolQuestion) {
       <tbody>
         <tr v-for="q in protocol.questions" :key="q.id">
           <td>{{ q.id }}</td>
-          <td>{{ q.type }}</td>
+          <td>{{ q.type }}{{ q.required ? ' (required)' : '' }}</td>
           <td>{{ range(q) }}</td>
           <td>{{ q.text }}</td>
         </tr>

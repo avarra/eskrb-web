@@ -21,8 +21,12 @@
 #
 # What counts as persisted state (KEEP THIS LIST IN SYNC when adding any):
 #   - SQLite DB (+ -wal/-shm)              : users, tokens, protocols, groups, memberships, episodes, check-ins, flags
-#   - user-secrets Seed:Tokens:*           : copied from TOKENS in this file on every run
+#   - user-secrets Seed:Tokens:*           : (ana, marko, nina, luka, doctor, senior, admin) copied from TOKENS in this file on every run
 #   - photo directory (MEDIA_PATH)         : patient photos (DiskMediaStore); deleted on reseed since the DB rows are gone
+#   - user-secrets Soniox:ApiKey (NOT in this file, it is a real paid key): never touched by reseed; set it once with
+#     `dotnet user-secrets set Soniox:ApiKey <key> --project api`
+#   - user-secrets OpenAI:ApiKey (NOT in this file, paid key): never touched by reseed; set once with
+#     `dotnet user-secrets set OpenAI:ApiKey <key> --project api`
 #   (the day a bucket replaces the disk store, this list and cleanup must change)
 
 set -euo pipefail
@@ -35,7 +39,9 @@ MEDIA_PATH="${MEDIA_PATH:-$(dirname "$DB_PATH")/media}"
 declare -A TOKENS=(
   [ana]=esk_9YnthHuR9f0LGLiUQN5BI9iXI6MhmIDNW-GzigMQgBk
   [marko]=esk_zWgDY7oV3_a2JWn3M15NQ7HOPzQ-UeDxw5FoWKOkUiA
+  [luka]=esk_Y1KYKXxdtHGnMsg5FsOw_P3elccSz49LeVV2Hit1Yfk
   [nina]=esk_j_x6sre0oSNl8Rx3ZhQQ1DcFVGM-ku3rcWfpCfJM9R8
+  [senior]=esk_foEp0Pcr3f8WY_oc0otnDLUAcB6C5z9321uh2grmS24
   [doctor]=esk_MjaRlQT6s2xdhDu8hlwSl3Ci0HWDoM1Mndn-6lTNurk
   [admin]=esk_-gbkKf_ZfnQNrdRNO47mfknlNt-u76TPqA0dBKn_gpU
 )

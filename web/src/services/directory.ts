@@ -38,6 +38,7 @@ export interface ProtocolQuestion {
   max: number | null
   unit: string | null
   options: string[] | null
+  required: boolean
 }
 export interface ProtocolRule {
   id: string
@@ -120,6 +121,68 @@ export interface TimelineItem {
   body: string | null
   flags: FlagRow[] | null
 }
+export interface TriageFlag {
+  id: string
+  ruleId: string
+  severity: 'attention' | 'urgent'
+  quote: string
+  createdAt: string
+}
+export interface TriageCard {
+  episodeId: string
+  patientId: string
+  patientName: string
+  groupName: string
+  protocolName: string
+  dayNumber: number
+  topFlag: TriageFlag | null
+  openFlags: number
+  missedCheckIn: boolean
+  lastCheckInDate: string | null
+  lastMessageAt: string | null
+  lastMessageFromStaff: boolean
+  escalation: {
+    id: string
+    sourceType: string
+    sourceId: string
+    fromName: string
+    toLevel: number
+    comment: string | null
+    createdAt: string
+  } | null
+}
+export interface Triage {
+  needsAttention: TriageCard[]
+  missedCheckIn: TriageCard[]
+  awaitingPatientReply: TriageCard[]
+  stable: TriageCard[]
+  generatedAt: string
+}
+export interface ReviewResult {
+  checkIns: number
+  logs: number
+  flagsResolved: number
+}
+export type NoteKind = 'medication' | 'advice' | 'private'
+export interface Note {
+  id: string
+  kind: NoteKind
+  title: string | null
+  body: string
+  createdAt: string
+  updatedAt: string
+}
+export interface Escalation {
+  id: string
+  sourceType: 'checkin' | 'log' | 'message'
+  sourceId: string
+  fromName: string
+  toLevel: number
+  comment: string | null
+  createdAt: string
+  resolved: boolean
+  resolvedAt: string | null
+}
 export interface Message {
   id: string
   fromUserId: string
@@ -157,7 +220,25 @@ export const directory = {
   },
 
   timeline: (episodeId: string) => api<TimelineItem[]>(`/episodes/${episodeId}/timeline`),
+  triage: () => api<Triage>('/staff/triage'),
+  notes: (episodeId: string) => api<Note[]>(`/episodes/${episodeId}/notes`),
+  escalations: (episodeId: string) => api<Escalation[]>(`/episodes/${episodeId}/escalations`),
   // --- writes ---
+  addNote: (episodeId: string, b: { kind: NoteKind; title?: string; body: string }) =>
+    api<Note>(`/episodes/${episodeId}/notes`, json('POST', b)),
+  updateNote: (
+    episodeId: string,
+    id: string,
+    b: { kind?: NoteKind; title?: string; body?: string },
+  ) => api<Note>(`/episodes/${episodeId}/notes/${id}`, json('PATCH', b)),
+  deleteNote: (episodeId: string, id: string) =>
+    api<void>(`/episodes/${episodeId}/notes/${id}`, json('DELETE')),
+  escalate: (episodeId: string, b: { sourceType: string; sourceId: string; comment?: string }) =>
+    api<Escalation>(`/episodes/${episodeId}/escalations`, json('POST', b)),
+  resolveEscalation: (episodeId: string, id: string) =>
+    api<Escalation>(`/episodes/${episodeId}/escalations/${id}/resolve`, json('POST')),
+  review: (episodeId: string) =>
+    api<ReviewResult>(`/staff/episodes/${episodeId}/review`, json('POST')),
   sendMessage: (episodeId: string, body: string) =>
     api<Message>(`/episodes/${episodeId}/messages`, json('POST', { body })),
   createEpisode: (b: NewEpisode) => api<EpisodeRow>('/episodes', json('POST', b)),

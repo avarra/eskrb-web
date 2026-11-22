@@ -22,19 +22,25 @@ Everything is admin-only unless noted. Keep this file current: delete items when
 - [ ] Validate protocol edits: every rule `field` must be a question id, and the operator/value type must suit the question type.
 
 ## Notes, replies and the patient loop (from PLAN-backend.md)
-- [ ] **Pick an LLM provider and implement `IExtractor`** (today only `NullExtractor`: text notes raise no flags). Constrain output to JSON for the protocol's question ids + exact quotes; test with Slovenian text early. Needs an API key in secrets; add rate limiting (public instance, paid calls).
+- [~] **LLM extraction:** provider = OpenAI (decided), `OpenAiExtractor` written + unit-tested but not yet run against the real API (needs `OpenAI:ApiKey`). Open: Slovenian eval set and model-tier choice (see the last line of this file), rate limit done (`llm` policy).
 - [ ] AI summary for the patient profile (cached, regenerated on new data).
 - [ ] Staff patient profile `GET /staff/episodes/{id}`: open flags, summary, pain series (the timeline endpoint already exists).
 - [ ] Optional photo caption (text sent with a photo) - decide; it would need extraction too.
-- [ ] Messages: mark-as-read / unread counts (phone badge). Notifications to the phone are a later task.
-- [ ] Review: `POST /staff/episodes/{id}/review` marks items reviewed and resolves their flags.
-- [ ] Triage: `GET /staff/triage` (needs attention / missed check-in / awaiting patient reply / stable) + the dashboard board.
-- [ ] Seed history: past check-ins and flags for the demo patients so the triage board has something to show.
+- (done) unread count + mark read. [ ] Push notifications (Expo token table + send on staff message; generic text only).
+- (done) Review: `POST /staff/episodes/{id}/review`. Still open: review a single item / unresolve.
+- (done) `GET /staff/triage`. Open: the dashboard board (web).
+- (done) Seed history (only for newly seeded episodes; reseed to get it on old ones).
 - [ ] Decide whether required questions exist (today unanswered questions are allowed) and whether one check-in per day should be enforced.
-- [ ] Missed check-in cutoff hour as config.
+- (done) cutoff is `Triage:MissedCutoffHour`.
 
 ## Cross-cutting
 - [ ] EF migrations instead of `EnsureCreated` (schema now changes under real data; needs `dotnet-ef`).
 - [ ] Audit log of admin/staff writes (who, action, target, time).
 - [ ] `POST /auth/demo-login` (flag-gated) and rate limiting on public/paid paths.
 - [ ] Soniox temporary-key endpoint (later; see CLAUDE.md).
+- (done) photo questions + `required`. Still open: protocol editing UI/validation for the new `photo`/`required` fields.
+- LLM: OpenAiExtractor is written but untested against the real API; build a Slovenian eval set (20 notes with expected values, esp. calf pain / breathing / negations) and pick the cheapest tier that gets every urgent case right. AI summary still open.
+
+## Added later
+- (done) Episode notes (medication/advice/private) with the meds check-in question, escalation to the next group level, triage board, review, unread count, dashboard restyle.
+- [ ] Notify (push) on escalation and on new patient-visible notes. [ ] Escalation history on the triage card after resolve. [ ] Seeded history for the new `senior`/escalation demo. [ ] Mobile: show notes + the `medsTaken` question.

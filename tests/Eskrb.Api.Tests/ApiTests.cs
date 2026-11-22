@@ -18,10 +18,21 @@ public class FakeExtractor : IExtractor
         Task.FromResult(Behavior(text));
 }
 
+public class FakeIssuer : ISttKeyIssuer
+{
+    public string? LastReference;
+    public Task<TemporaryKey> IssueAsync(string clientReferenceId, CancellationToken ct)
+    {
+        LastReference = clientReferenceId;
+        return Task.FromResult(new TemporaryKey("snx_temp_fake", DateTimeOffset.UtcNow.AddSeconds(60)));
+    }
+}
+
 public class ApiFixture : WebApplicationFactory<Program>
 {
     public readonly string Dir = Path.Combine(Path.GetTempPath(), "eskrb-tests-" + Guid.NewGuid().ToString("N"));
     public readonly FakeExtractor Extractor = new();
+    public readonly FakeIssuer Issuer = new();
 
     public ApiFixture()
     {
@@ -29,7 +40,7 @@ public class ApiFixture : WebApplicationFactory<Program>
         // Program reads config before the factory's callbacks run, so use environment variables.
         Environment.SetEnvironmentVariable("ConnectionStrings__Default", $"Data Source={Path.Combine(Dir, "t.db")}");
         Environment.SetEnvironmentVariable("Media__Path", Path.Combine(Dir, "media"));
-        foreach (var u in new[] { "ana", "marko", "nina", "doctor", "admin" })
+        foreach (var u in new[] { "ana", "marko", "nina", "luka", "doctor", "senior", "admin" })
             Environment.SetEnvironmentVariable($"Seed__Tokens__{u}", $"tok-{u}");
     }
 
@@ -40,6 +51,8 @@ public class ApiFixture : WebApplicationFactory<Program>
         {
             s.RemoveAll<IExtractor>();
             s.AddSingleton<IExtractor>(Extractor);
+            s.RemoveAll<ISttKeyIssuer>();
+            s.AddSingleton<ISttKeyIssuer>(Issuer);
         });
     }
 
@@ -158,7 +171,262 @@ public class ApiTests(ApiFixture api) : IClassFixture<ApiFixture>
         Assert.Equal(HttpStatusCode.Unauthorized, anon.StatusCode);
     }
 
+    // ---------- Soniox temporary key ----------
+
+    [Fact]
+    public async Task Temporary_stt_key_is_for_patients_with_an_active_episode_and_rate_limited()
+    {
+        Assert.Equal(HttpStatusCode.Unauthorized, (await api.CreateClient().PostAsync("/stt/temporary-key", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await api.As("doctor").PostAsync("/stt/temporary-key", null)).StatusCode);
+
+        var ok = await api.As("marko").PostAsync("/stt/temporary-key", null);
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        var body = await ok.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("snx_temp_fake", body.GetProperty("apiKey").GetString());
+        Assert.True(body.TryGetProperty("expiresAt", out _));
+        Assert.True(Guid.TryParse(api.Issuer.LastReference, out _)); // bound to an episode id, not a name
+
+        HttpStatusCode last = default;
+        for (var n = 0; n < 8; n++) last = (await api.As("marko").PostAsync("/stt/temporary-key", null)).StatusCode;
+        Assert.Equal(HttpStatusCode.TooManyRequests, last);
+    }
+
+    // ---------- error bodies ----------
+
+    [Theory]
+    [InlineData("/me", null, 401)]
+    [InlineData("/users", "ana", 403)]
+    [InlineData("/does-not-exist", "ana", 404)]
+    public async Task Errors_always_carry_a_readable_detail(string path, string? as_, int status)
+    {
+        var client = as_ is null ? api.CreateClient() : api.As(as_);
+        var r = await client.GetAsync(path);
+        Assert.Equal(status, (int)r.StatusCode);
+        var body = await r.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.False(string.IsNullOrWhiteSpace(body.GetProperty("detail").GetString()));
+        Assert.True(body.TryGetProperty("traceId", out _));
+    }
+
+    [Fact]
+    public async Task Wrong_content_type_and_bad_json_say_what_is_wrong()
+    {
+        var wrong = await api.As("ana").PostAsync($"/episodes/{AnaEpisode}/logs", new StringContent("x", System.Text.Encoding.UTF8, "text/plain"));
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, wrong.StatusCode);
+        Assert.Contains("Content-Type", (await wrong.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString());
+
+        var bad = await api.As("ana").PostAsync($"/episodes/{AnaEpisode}/checkins", new StringContent("{bad", System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+        Assert.False(string.IsNullOrWhiteSpace((await bad.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString()));
+    }
+
+    // ---------- photo questions in check-ins ----------
+
+    [Fact]
+    public async Task Photo_question_is_answered_with_a_file_part_and_shown_inside_the_check_in()
+    {
+        MultipartFormDataContent Form(string answers, string part)
+        {
+            var c = new MultipartFormDataContent { { new StringContent(answers), "answers" } };
+            var f = new ByteArrayContent(Png); f.Headers.ContentType = new("image/png");
+            c.Add(f, part, "w.png");
+            return c;
+        }
+        var ok = await api.As("ana").PostAsync($"/episodes/{AnaEpisode}/checkins", Form("{\"pain\":2}", "woundPhoto"));
+        Assert.Equal(HttpStatusCode.Created, ok.StatusCode);
+        var url = (await ok.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("answers").GetProperty("woundPhoto").GetString()!;
+        Assert.StartsWith("/media/", url);
+        Assert.Equal(HttpStatusCode.OK, (await api.As("ana").GetAsync(url)).StatusCode);
+
+        // not duplicated as a loose note in the timeline
+        var tl = await (await api.As("ana").GetAsync($"/episodes/{AnaEpisode}/timeline")).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.DoesNotContain(tl.EnumerateArray(), i => i.GetProperty("mediaUrl").GetString() == url);
+
+        // wrong part name, JSON-supplied photo answer: rejected
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("ana").PostAsync($"/episodes/{AnaEpisode}/checkins", Form("{\"pain\":2}", "pain"))).StatusCode);
+        var json = await api.As("ana").PostAsJsonAsync($"/episodes/{AnaEpisode}/checkins", new { answers = new { woundPhoto = "x" } });
+        Assert.Equal(HttpStatusCode.BadRequest, json.StatusCode);
+    }
+
+    [Fact]
+    public async Task Check_in_free_text_fills_only_unanswered_questions_and_the_rules_still_decide()
+    {
+        api.Extractor.Behavior = _ => new()
+        {
+            ["calfPain"] = new(J("true"), "boli me meča"),
+            ["pain"] = new(J("9"), "huda bolečina"), // already answered directly: must not be overridden
+        };
+        var r = await api.As("ana").PostAsJsonAsync($"/episodes/{AnaEpisode}/checkins",
+            new { answers = new { pain = 2, notes = "Danes me boli meča." } });
+        Assert.Equal(HttpStatusCode.Created, r.StatusCode);
+        var b = await Body(r);
+        Assert.Equal(2, b.GetProperty("answers").GetProperty("pain").GetInt32());
+        Assert.True(b.GetProperty("answers").GetProperty("calfPain").GetBoolean());
+        Assert.Equal("call_112", b.GetProperty("patientAction").GetString());
+
+        // extractor down: check-in is still saved, just without inferred values
+        api.Extractor.Behavior = _ => throw new InvalidOperationException("llm down");
+        var down = await api.As("ana").PostAsJsonAsync($"/episodes/{AnaEpisode}/checkins", new { answers = new { pain = 2, notes = "x" } });
+        Assert.Equal(HttpStatusCode.Created, down.StatusCode);
+        api.Extractor.Behavior = _ => [];
+    }
+
+    // ---------- triage, review, unread ----------
+
+    [Fact]
+    public async Task Triage_puts_each_seeded_patient_in_one_column_and_review_resolves_flags()
+    {
+        static List<string> Names(JsonElement col) => col.EnumerateArray().Select(c => c.GetProperty("patientName").GetString()!).ToList();
+        var t = await Body(await api.As("doctor").GetAsync("/staff/triage"));
+        Assert.Equal(["Marko Horvat"], Names(t.GetProperty("needsAttention")));
+        Assert.Equal("urgent", t.GetProperty("needsAttention")[0].GetProperty("topFlag").GetProperty("severity").GetString());
+        Assert.Equal(["Nina Kovač"], Names(t.GetProperty("missedCheckIn")));
+        Assert.Equal(["Luka Krajnc"], Names(t.GetProperty("awaitingPatientReply")));
+        Assert.Equal(["Ana Novak"], Names(t.GetProperty("stable")));
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await api.As("marko").GetAsync("/staff/triage")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await api.CreateClient().GetAsync("/staff/triage")).StatusCode);
+
+        var review = await Body(await api.As("doctor").PostAsync($"/staff/episodes/{MarkoEpisode}/review", null));
+        Assert.True(review.GetProperty("flagsResolved").GetInt32() >= 2);
+        Assert.True(review.GetProperty("checkIns").GetInt32() >= 1);
+        var after = await Body(await api.As("doctor").GetAsync("/staff/triage"));
+        Assert.Empty(after.GetProperty("needsAttention").EnumerateArray());
+        Assert.Contains("Marko Horvat", Names(after.GetProperty("stable")));
+
+        var tl = (await Body(await api.As("marko").GetAsync($"/episodes/{MarkoEpisode}/timeline"))).EnumerateArray();
+        Assert.All(tl.Where(i => i.GetProperty("kind").GetString() != "message"), i => Assert.True(i.GetProperty("reviewed").GetBoolean()));
+        Assert.Equal(HttpStatusCode.NotFound, (await api.As("doctor").PostAsync($"/staff/episodes/{Guid.NewGuid()}/review", null)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Patient_sees_unread_staff_messages_until_marking_them_read()
+    {
+        const string luka = "00000000-0000-0000-0000-00000000e004";
+        var me = await Body(await api.As("luka").GetAsync("/me/episode"));
+        Assert.Equal(1, me.GetProperty("unreadMessages").GetInt32());   // the seeded follow-up request
+
+        Assert.Equal(HttpStatusCode.NoContent, (await api.As("luka").PostAsync($"/episodes/{luka}/read", null)).StatusCode);
+        Assert.Equal(0, (await Body(await api.As("luka").GetAsync("/me/episode"))).GetProperty("unreadMessages").GetInt32());
+
+        await Task.Delay(15);
+        await api.As("doctor").PostAsJsonAsync($"/episodes/{luka}/messages", new { body = "Hvala, vse v redu." });
+        Assert.Equal(1, (await Body(await api.As("luka").GetAsync("/me/episode"))).GetProperty("unreadMessages").GetInt32());
+        // the patient's own messages never count, and other patients can't touch this episode
+        await api.As("luka").PostAsJsonAsync($"/episodes/{luka}/messages", new { body = "Prav." });
+        Assert.Equal(1, (await Body(await api.As("luka").GetAsync("/me/episode"))).GetProperty("unreadMessages").GetInt32());
+        Assert.Equal(HttpStatusCode.NotFound, (await api.As("ana").PostAsync($"/episodes/{luka}/read", null)).StatusCode);
+    }
+
+    // ---------- episode notes ----------
+
+    [Fact]
+    public async Task Notes_are_staff_managed_private_ones_never_reach_the_patient_and_meds_add_a_check_in_question()
+    {
+        const string luka = "00000000-0000-0000-0000-00000000e004";
+        string url(string tail = "") => $"/episodes/{luka}/notes{tail}";
+
+        // before any medication note: no meds question
+        var before = await Body(await api.As("luka").GetAsync("/me/episode"));
+        Assert.DoesNotContain(before.GetProperty("protocol").GetProperty("questions").EnumerateArray(), q => q.GetProperty("id").GetString() == "medsTaken");
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("luka").PostAsJsonAsync($"/episodes/{luka}/checkins", new { answers = new { medsTaken = true } })).StatusCode);
+
+        var med = await Body(await api.As("doctor").PostAsJsonAsync(url(), new { kind = "medication", title = "Antibiotik", body = "Ena tableta zjutraj in zvečer." }));
+        await api.As("doctor").PostAsJsonAsync(url(), new { kind = "advice", body = "Noge držite dvignjene." });
+        await api.As("doctor").PostAsJsonAsync(url(), new { kind = "private", body = "Pazi: alergija na penicilin?" });
+
+        // patient: only medication + advice, read-only; staff: all three
+        var mine = (await Body(await api.As("luka").GetAsync(url()))).EnumerateArray().Select(n => n.GetProperty("kind").GetString()).ToList();
+        Assert.Equal(["medication", "advice"], mine);
+        Assert.Equal(3, (await Body(await api.As("doctor").GetAsync(url()))).GetArrayLength());
+        Assert.DoesNotContain("penicilin", await (await api.As("luka").GetAsync("/me/episode")).Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Forbidden, (await api.As("luka").PostAsJsonAsync(url(), new { kind = "advice", body = "x" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await api.As("ana").GetAsync(url())).StatusCode);
+
+        // /me/episode now carries the notes and the synthesized question; the check-in accepts it
+        var me = await Body(await api.As("luka").GetAsync("/me/episode"));
+        Assert.Equal(2, me.GetProperty("notes").GetArrayLength());
+        Assert.Contains(me.GetProperty("protocol").GetProperty("questions").EnumerateArray(), q => q.GetProperty("id").GetString() == "medsTaken");
+        Assert.Equal(HttpStatusCode.Created, (await api.As("luka").PostAsJsonAsync($"/episodes/{luka}/checkins", new { answers = new { pain = 2, medsTaken = true } })).StatusCode);
+
+        // edit (kind, title, body) and delete
+        var id = med.GetProperty("id").GetString();
+        var edited = await Body(await api.As("doctor").PatchAsJsonAsync(url($"/{id}"), new { body = "Dve tableti zjutraj." }));
+        Assert.Equal("Dve tableti zjutraj.", edited.GetProperty("body").GetString());
+        Assert.Equal("Antibiotik", edited.GetProperty("title").GetString());
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("doctor").PatchAsJsonAsync(url($"/{id}"), new { kind = "nonsense" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await api.As("doctor").DeleteAsync(url($"/{id}"))).StatusCode);
+        var gone = await Body(await api.As("luka").GetAsync("/me/episode"));
+        Assert.DoesNotContain(gone.GetProperty("protocol").GetProperty("questions").EnumerateArray(), q => q.GetProperty("id").GetString() == "medsTaken");
+    }
+
+    // ---------- escalation ----------
+
+    [Fact]
+    public async Task Escalating_puts_an_item_in_the_seniors_needs_attention_until_resolved()
+    {
+        // other tests may leave open flags on Ana, so look at the card's escalation field rather than the column
+        async Task<JsonElement?> AnaEscalation(string who)
+        {
+            var t = await Body(await api.As(who).GetAsync("/staff/triage"));
+            foreach (var col in t.EnumerateObject().Where(c => c.Value.ValueKind == JsonValueKind.Array))
+                foreach (var c in col.Value.EnumerateArray().Where(c => c.GetProperty("patientName").GetString() == "Ana Novak"))
+                    return c.TryGetProperty("escalation", out var e) && e.ValueKind == JsonValueKind.Object ? e : null;
+            return null;
+        }
+        var item = (await Body(await api.As("doctor").GetAsync($"/episodes/{AnaEpisode}/timeline"))).EnumerateArray()
+            .First(i => i.GetProperty("kind").GetString() == "checkin");
+        var body = new { sourceType = "checkin", sourceId = item.GetProperty("id").GetString(), comment = "Prosim, poglejte še vi." };
+
+        var created = await api.As("doctor").PostAsJsonAsync($"/episodes/{AnaEpisode}/escalations", body);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var esc = await Body(created);
+        Assert.Equal(2, esc.GetProperty("toLevel").GetInt32());
+        Assert.Equal("Dr. Maja Zupan", esc.GetProperty("fromName").GetString());
+
+        // senior sees Ana under needs attention with the comment; the sender's own board is unchanged
+        Assert.Equal("Prosim, poglejte še vi.", (await AnaEscalation("senior"))!.Value.GetProperty("comment").GetString());
+        var seniorCols = await Body(await api.As("senior").GetAsync("/staff/triage"));
+        Assert.Contains(seniorCols.GetProperty("needsAttention").EnumerateArray(), c => c.GetProperty("patientName").GetString() == "Ana Novak");
+        Assert.Null(await AnaEscalation("doctor"));
+
+        var eid = esc.GetProperty("id").GetString();
+        Assert.Equal(HttpStatusCode.Forbidden, (await api.As("doctor").PostAsync($"/episodes/{AnaEpisode}/escalations/{eid}/resolve", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await api.As("senior").PostAsync($"/episodes/{AnaEpisode}/escalations/{eid}/resolve", null)).StatusCode);
+        Assert.Null(await AnaEscalation("senior"));
+
+        // rules: nobody above the senior, admins have no level, patients can't, the item must belong to the episode
+        Assert.Equal(HttpStatusCode.Conflict, (await api.As("senior").PostAsJsonAsync($"/episodes/{AnaEpisode}/escalations", body)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await api.As("admin").PostAsJsonAsync($"/episodes/{AnaEpisode}/escalations", body)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await api.As("ana").PostAsJsonAsync($"/episodes/{AnaEpisode}/escalations", body)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await api.As("doctor").PostAsJsonAsync($"/episodes/{AnaEpisode}/escalations", new { sourceType = "log", sourceId = Guid.NewGuid() })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await api.As("doctor").PostAsJsonAsync($"/episodes/{AnaEpisode}/escalations", new { sourceType = "x", sourceId = Guid.NewGuid() })).StatusCode);
+    }
+
     // ---------- photos ----------
+
+    [Fact]
+    public async Task Several_photos_in_one_request_become_one_log_each_and_bad_ones_save_nothing()
+    {
+        MultipartFormDataContent Two(byte[] second, string name2)
+        {
+            var c = new MultipartFormDataContent();
+            var a = new ByteArrayContent(Png); a.Headers.ContentType = new("image/png");
+            var b = new ByteArrayContent(second); b.Headers.ContentType = new("image/png");
+            c.Add(a, "wound", "a.png"); c.Add(b, name2, "b.png");
+            return c;
+        }
+        var ok = await api.As("ana").PostAsync($"/episodes/{AnaEpisode}/logs", Two(Png, "other"));
+        Assert.Equal(HttpStatusCode.Created, ok.StatusCode);
+        var body = await ok.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(2, body.GetProperty("logs").GetArrayLength());
+        Assert.Equal(body.GetProperty("log").GetProperty("id").GetString(), body.GetProperty("logs")[0].GetProperty("id").GetString());
+
+        var before = (await (await api.As("ana").GetAsync($"/episodes/{AnaEpisode}/timeline")).Content.ReadFromJsonAsync<JsonElement>()).GetArrayLength();
+        var bad = await api.As("ana").PostAsync($"/episodes/{AnaEpisode}/logs", Two("<html/>"u8.ToArray(), "other"));
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+        var after = (await (await api.As("ana").GetAsync($"/episodes/{AnaEpisode}/timeline")).Content.ReadFromJsonAsync<JsonElement>()).GetArrayLength();
+        Assert.Equal(before, after);
+    }
 
     [Fact]
     public async Task Photo_is_stored_and_served_only_to_people_allowed_to_see_the_episode()

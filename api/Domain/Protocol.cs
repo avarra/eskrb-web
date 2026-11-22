@@ -15,13 +15,17 @@ public class Protocol
 public class ProtocolQuestion
 {
     public required string Id { get; set; }
-    /// <summary>scale | number | choice | boolean</summary>
+    /// <summary>scale | number | choice | boolean | photo | text (freeform, max 2000 chars; the LLM extracts the other questions from it)</summary>
     public required string Type { get; set; }
     public required string Text { get; set; }
     public int? Min { get; set; }
     public int? Max { get; set; }
     public string? Unit { get; set; }
     public List<string>? Options { get; set; }
+    /// <summary>A check-in is rejected unless this question is answered (for photo questions: a file is attached).</summary>
+    public bool Required { get; set; }
+    /// <summary>True = purely rule-based question: the LLM never fills it from free text (it must be answered directly).</summary>
+    public bool SkipExtraction { get; set; }
 }
 
 public class ProtocolRule

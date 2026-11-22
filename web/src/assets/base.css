@@ -1,86 +1,248 @@
-/* color palette from <https://github.com/vuejs/theme> */
+/*
+ * eSkrb dashboard: the mobile design language (docs: one saturated blue ground, white sheets, one job per colour)
+ * adapted for a denser, more serious desktop tool for clinical staff.
+ *
+ * Colour jobs (never reuse a colour for another job):
+ *   coral = pain only, yellow = today/unread only, green = reviewed only, red = urgent (112) only,
+ *   blue = brand, chrome and "needs attention" (the non-urgent flag).
+ */
 :root {
-  --vt-c-white: #ffffff;
-  --vt-c-white-soft: #f8f8f8;
-  --vt-c-white-mute: #f2f2f2;
+  --ground: #1652c4;
+  --ground-ink: #ffffff;
+  --ground-ink-2: #d9e6ff;
+  --tonal: rgba(255, 255, 255, 0.14);
+  --tonal-line: rgba(255, 255, 255, 0.22);
+  --faint: rgba(255, 255, 255, 0.3);
 
-  --vt-c-black: #181818;
-  --vt-c-black-soft: #222222;
-  --vt-c-black-mute: #282828;
+  --sheet: #ffffff;
+  --ink: #0c2145;
+  --ink-2: #3b5683;
+  --fill: #ebf1fd;
+  --hairline: #e2eaf7;
 
-  --vt-c-indigo: #2c3e50;
+  --today: #ffd45c;
+  --reviewed: #0f7a5c;
+  --pain-low: #fff3e8;
+  --pain-mid: #ffb48c;
+  --pain-high: #ff6a55;
+  --pain-bg: #ffe4d3;
+  --pain-ink: #7a2e0f;
+  --urgent: #b3121a;
+  --urgent-grad: linear-gradient(135deg, #c0151d, #860a10);
+  --urgent-glow: #d8262e;
 
-  --vt-c-divider-light-1: rgba(60, 60, 60, 0.29);
-  --vt-c-divider-light-2: rgba(60, 60, 60, 0.12);
-  --vt-c-divider-dark-1: rgba(84, 84, 84, 0.65);
-  --vt-c-divider-dark-2: rgba(84, 84, 84, 0.48);
+  --radius-card: 20px;
+  --radius-sheet: 32px;
+  --radius-thumb: 12px;
+  --shadow-object: 0 12px 30px -16px rgba(12, 33, 69, 0.45);
 
-  --vt-c-text-light-1: var(--vt-c-indigo);
-  --vt-c-text-light-2: rgba(60, 60, 60, 0.66);
-  --vt-c-text-dark-1: var(--vt-c-white);
-  --vt-c-text-dark-2: rgba(235, 235, 235, 0.64);
-}
-
-/* semantic color variables for this project */
-:root {
-  --color-background: var(--vt-c-white);
-  --color-background-soft: var(--vt-c-white-soft);
-  --color-background-mute: var(--vt-c-white-mute);
-
-  --color-border: var(--vt-c-divider-light-2);
-  --color-border-hover: var(--vt-c-divider-light-1);
-
-  --color-heading: var(--vt-c-text-light-1);
-  --color-text: var(--vt-c-text-light-1);
-
-  --section-gap: 160px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-background: var(--vt-c-black);
-    --color-background-soft: var(--vt-c-black-soft);
-    --color-background-mute: var(--vt-c-black-mute);
-
-    --color-border: var(--vt-c-divider-dark-2);
-    --color-border-hover: var(--vt-c-divider-dark-1);
-
-    --color-heading: var(--vt-c-text-dark-1);
-    --color-text: var(--vt-c-text-dark-2);
-  }
+  --font: 'Lexend', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 36px;
 }
 
 *,
 *::before,
 *::after {
   box-sizing: border-box;
-  margin: 0;
-  font-weight: normal;
 }
 
+html,
 body {
-  min-height: 100vh;
-  color: var(--color-text);
-  background: var(--color-background);
-  transition:
-    color 0.5s,
-    background-color 0.5s;
-  line-height: 1.6;
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    Oxygen,
-    Ubuntu,
-    Cantarell,
-    'Fira Sans',
-    'Droid Sans',
-    'Helvetica Neue',
-    sans-serif;
-  font-size: 15px;
-  text-rendering: optimizeLegibility;
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 400 15px/22px var(--font);
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---------- type (desktop scale of the mobile one; nothing below 13) ---------- */
+h1 {
+  margin: 0 0 var(--space-4);
+  font: 600 28px/32px var(--font);
+  letter-spacing: -0.3px;
+}
+h2 {
+  margin: var(--space-5) 0 var(--space-3);
+  font: 600 18px/24px var(--font);
+}
+p {
+  margin: 0 0 var(--space-3);
+}
+.meta {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-2);
+}
+.meta strong {
+  font-weight: 500;
+}
+a {
+  color: var(--ground);
+  font-weight: 500;
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* ---------- forms ---------- */
+input,
+select,
+textarea {
+  font: 400 15px/22px var(--font);
+  color: var(--ink);
+  background: var(--fill);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 8px 12px;
+  min-height: 40px;
+}
+textarea {
+  resize: vertical;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2.5px solid var(--ground);
+  outline-offset: 2px;
+}
+label {
+  font: 500 13px/18px var(--font);
+  color: var(--ink-2);
+}
+
+/* Pill buttons. Default = tonal on a sheet; .primary = the one main action; pressed/disabled per the language. */
+button {
+  font: 500 15px/20px var(--font);
+  min-height: 40px;
+  padding: 0 20px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--fill);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    opacity 0.12s,
+    transform 0.12s;
+}
+button.primary {
+  background: var(--ground);
+  border-color: var(--ground);
+  color: #fff;
+  font-weight: 600;
+}
+button.outline {
+  background: transparent;
+  border: 2.5px solid currentColor;
+  opacity: 0.85;
+}
+button:active:not(:disabled) {
+  opacity: 0.85;
+  transform: scale(0.985);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+td button + button {
+  margin-left: var(--space-2);
+}
+
+/* ---------- tables: hairlines, no boxes ---------- */
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+th {
+  text-align: left;
+  padding: 8px 12px;
+  font: 500 13px/18px var(--font);
+  color: var(--ink-2);
+  border-bottom: 2px solid var(--hairline);
+}
+td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: middle;
+}
+tbody tr:hover {
+  background: var(--fill);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: end;
+  margin-bottom: var(--space-4);
+}
+.filters label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.error {
+  color: var(--urgent);
+  font-weight: 500;
+}
+.inactive {
+  opacity: 0.5;
+}
+
+/* ---------- chips: one job per colour ---------- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font: 500 13px/18px var(--font);
+  background: var(--fill);
+  color: var(--ink);
+}
+.chip.urgent {
+  background: var(--urgent-grad);
+  color: #fff;
+  font-weight: 600;
+}
+.chip.attention {
+  background: var(--ground);
+  color: #fff;
+  font-weight: 600;
+}
+.chip.reviewed {
+  color: var(--reviewed);
+  background: transparent;
+  font-weight: 600;
+}
+.chip.reviewed::before {
+  content: '✓';
+}
+.chip.pain-low {
+  background: var(--pain-low);
+  color: var(--pain-ink);
+}
+.chip.pain-mid {
+  background: var(--pain-mid);
+  color: var(--pain-ink);
+}
+.chip.pain-high {
+  background: var(--pain-high);
+  color: #fff;
+}
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--today);
+  display: inline-block;
+  flex: none;
 }

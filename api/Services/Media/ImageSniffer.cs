@@ -14,6 +14,7 @@ public static class ImageSniffer
             var brand = System.Text.Encoding.ASCII.GetString(h[8..12]);
             if (brand is "heic" or "heix" or "hevc" or "hevx" or "mif1" or "msf1" or "heim" or "heis")
                 return ("image/heic", ".heic");
+            if (brand is "avif" or "avis") return ("image/avif", ".avif");
         }
         return null;
     }

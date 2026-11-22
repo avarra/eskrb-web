@@ -17,6 +17,7 @@ public class ImageSnifferTests
     [Fact] public void Png() => Assert.Equal(("image/png", ".png"), ImageSniffer.Detect([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]));
     [Fact] public void Webp() => Assert.Equal(("image/webp", ".webp"), ImageSniffer.Detect("RIFF\0\0\0\0WEBPVP8 "u8));
     [Fact] public void Heic() => Assert.Equal(("image/heic", ".heic"), ImageSniffer.Detect("\0\0\0\u0018ftypheic\0\0\0\0"u8));
+    [Fact] public void Avif() => Assert.Equal(("image/avif", ".avif"), ImageSniffer.Detect("\0\0\0\u0018ftypavif\0\0\0\0"u8));
     [Fact] public void Html_is_not_an_image() => Assert.Null(ImageSniffer.Detect("<html></html>"u8));
     [Fact] public void Wav_is_not_an_image() => Assert.Null(ImageSniffer.Detect("RIFF\0\0\0\0WAVEfmt "u8));
     [Fact] public void Empty_is_not_an_image() => Assert.Null(ImageSniffer.Detect([]));

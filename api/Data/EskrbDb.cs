@@ -19,6 +19,9 @@ public class EskrbDb(DbContextOptions<EskrbDb> options) : DbContext(options)
     public DbSet<Flag> Flags => Set<Flag>();
     public DbSet<Log> Logs => Set<Log>();
     public DbSet<Message> Messages => Set<Message>();
+    public DbSet<EpisodeNote> EpisodeNotes => Set<EpisodeNote>();
+    public DbSet<Escalation> Escalations => Set<Escalation>();
+    public DbSet<EpisodeReadState> EpisodeReadStates => Set<EpisodeReadState>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -58,6 +61,21 @@ public class EskrbDb(DbContextOptions<EskrbDb> options) : DbContext(options)
             m.HasOne(x => x.FromUser).WithMany().HasForeignKey(x => x.FromUserId);
             m.HasIndex(x => new { x.EpisodeId, x.CreatedAt });
         });
+
+        b.Entity<EpisodeNote>(n =>
+        {
+            n.HasOne(x => x.Episode).WithMany().HasForeignKey(x => x.EpisodeId);
+            n.HasIndex(x => x.EpisodeId);
+        });
+
+        b.Entity<Escalation>(x =>
+        {
+            x.HasOne(e => e.Episode).WithMany().HasForeignKey(e => e.EpisodeId);
+            x.HasOne(e => e.FromUser).WithMany().HasForeignKey(e => e.FromUserId);
+            x.HasIndex(e => new { e.EpisodeId, e.ResolvedAt });
+        });
+
+        b.Entity<EpisodeReadState>().HasKey(x => x.EpisodeId);
 
         b.Entity<Flag>(f =>
         {

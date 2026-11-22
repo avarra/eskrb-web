@@ -5,9 +5,9 @@ const auth = useAuthStore()
 </script>
 
 <template>
-  <main v-if="auth.user">
+  <div v-if="auth.user">
     <h1>Hello, {{ auth.user.name }}</h1>
-    <p>Role: {{ auth.user.role }}</p>
-    <p v-if="!auth.isStaff">This dashboard is for staff accounts.</p>
-  </main>
+    <p class="meta">Signed in as {{ auth.user.role }}.</p>
+    <p v-if="!auth.isStaff">This dashboard is for staff accounts. Patients use the phone app.</p>
+  </div>
 </template>

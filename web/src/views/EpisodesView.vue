@@ -121,7 +121,10 @@ watch(() => route.query, load)
       Start (default today)
       <input v-model="draft.startDate" type="date" />
     </label>
-    <button :disabled="!draft.patientId || !draft.protocolId || !draft.doctorGroupId">
+    <button
+      class="primary"
+      :disabled="!draft.patientId || !draft.protocolId || !draft.doctorGroupId"
+    >
       Create
     </button>
   </form>

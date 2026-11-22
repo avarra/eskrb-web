@@ -13,16 +13,19 @@ public static class Visibility
     public static Guid UserId(this ClaimsPrincipal u) => Guid.Parse(u.FindFirstValue(ClaimTypes.NameIdentifier)!);
     public static bool IsAdmin(this ClaimsPrincipal u) => u.IsInRole("admin");
 
-    /// <summary>Group ids the user is an active member of right now.</summary>
-    public static IQueryable<Guid> ActiveGroupIds(this EskrbDb db, Guid userId)
+    /// <summary>The user's memberships that are active right now.</summary>
+    public static IQueryable<DoctorGroupMember> ActiveMemberships(this EskrbDb db, Guid userId)
     {
         var now = DateTime.UtcNow;
         return db.DoctorGroupMembers
             .Where(m => m.UserId == userId
                 && (m.ActiveFrom == null || m.ActiveFrom <= now)
-                && (m.ActiveUntil == null || m.ActiveUntil > now))
-            .Select(m => m.GroupId);
+                && (m.ActiveUntil == null || m.ActiveUntil > now));
     }
+
+    /// <summary>Group ids the user is an active member of right now.</summary>
+    public static IQueryable<Guid> ActiveGroupIds(this EskrbDb db, Guid userId) =>
+        db.ActiveMemberships(userId).Select(m => m.GroupId);
 
     public static IQueryable<DoctorGroup> VisibleGroups(this EskrbDb db, ClaimsPrincipal u)
     {

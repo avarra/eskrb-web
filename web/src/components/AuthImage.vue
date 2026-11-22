@@ -20,7 +20,12 @@ onBeforeUnmount(() => url.value && URL.revokeObjectURL(url.value))
 </script>
 
 <template>
-  <img v-if="url" :src="url" alt="Patient photo" style="max-width: 320px; max-height: 320px" />
+  <img
+    v-if="url"
+    :src="url"
+    alt="Patient photo"
+    style="max-width: 320px; max-height: 320px; border-radius: 12px"
+  />
   <span v-else-if="failed" class="error">Photo unavailable</span>
   <span v-else>Loading photo…</span>
 </template>

@@ -14,7 +14,7 @@ namespace Eskrb.Api.Controllers;
 public record TextLogRequest(string Type, string Source, string Text);
 public record LogDto(Guid Id, string Type, string? Source, string? Text, string? MediaUrl, DateTime CreatedAt);
 public record LogResultDto(
-    LogDto Log, Dictionary<string, JsonElement> Extracted, List<FlagDto> Flags, string PatientAction, bool ExtractionFailed);
+    LogDto Log, List<LogDto> Logs, Dictionary<string, JsonElement> Extracted, List<FlagDto> Flags, string PatientAction, bool ExtractionFailed);
 
 /// <summary>
 /// Extra patient notes. NO AUDIO: the phone sends text the patient has confirmed (typed or dictated) or a photo.
@@ -26,6 +26,7 @@ public class LogsController(EskrbDb db, IExtractor extractor, IMediaStore media,
 {
     private const int MaxTextLength = 4000;
     private const long MaxPhotoBytes = 10_000_000;
+    private const int MaxPhotosPerRequest = 5;
 
     private async Task<(Episode? Ep, ActionResult? Error)> ActiveOwnEpisode(Guid id)
     {
@@ -37,6 +38,7 @@ public class LogsController(EskrbDb db, IExtractor extractor, IMediaStore media,
 
     [HttpPost("/episodes/{id:guid}/logs")]
     [Consumes("application/json")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("llm")]
     public async Task<ActionResult<LogResultDto>> AddText(Guid id, TextLogRequest req, CancellationToken ct)
     {
         var (ep, error) = await ActiveOwnEpisode(id);
@@ -75,39 +77,58 @@ public class LogsController(EskrbDb db, IExtractor extractor, IMediaStore media,
         return StatusCode(201, Result(log, flags, failed));
     }
 
+    /// <summary>
+    /// One or more photos in one multipart request: every file part (any part name; "file" by convention)
+    /// becomes its own photo log. All files are validated before any is saved, so it is all-or-nothing.
+    /// </summary>
     [HttpPost("/episodes/{id:guid}/logs")]
     [Consumes("multipart/form-data")]
-    [RequestSizeLimit(MaxPhotoBytes + 1_000_000)]
-    [RequestFormLimits(MultipartBodyLengthLimit = MaxPhotoBytes + 1_000_000)]
-    public async Task<ActionResult<LogResultDto>> AddPhoto(Guid id, IFormFile file, CancellationToken ct)
+    [RequestSizeLimit(MaxPhotosPerRequest * MaxPhotoBytes + 1_000_000)]
+    [RequestFormLimits(MultipartBodyLengthLimit = MaxPhotosPerRequest * MaxPhotoBytes + 1_000_000)]
+    public async Task<ActionResult<LogResultDto>> AddPhotos(Guid id, CancellationToken ct)
     {
         var (ep, error) = await ActiveOwnEpisode(id);
         if (ep is null) return error!;
 
-        if (file.Length == 0 || file.Length > MaxPhotoBytes)
-            return Problem(detail: $"Photo must be between 1 byte and {MaxPhotoBytes / 1_000_000} MB.", statusCode: 400);
+        var files = (await Request.ReadFormAsync(ct)).Files;
+        if (files.Count == 0) return Problem(detail: "Send at least one image as a multipart file part.", statusCode: 400);
+        if (files.Count > MaxPhotosPerRequest) return Problem(detail: $"At most {MaxPhotosPerRequest} photos per request.", statusCode: 400);
 
-        var head = new byte[16];
-        int read;
-        await using (var peek = file.OpenReadStream()) read = await peek.ReadAsync(head, ct);
-        var kind = ImageSniffer.Detect(head.AsSpan(0, read));
-        if (kind is null) return Problem(detail: "Only JPEG, PNG, WebP or HEIC images are accepted.", statusCode: 400);
-
-        string key;
-        await using (var stream = file.OpenReadStream()) key = await media.SaveAsync(stream, kind.Value.Extension, ct);
-
-        var log = new Log
+        var checkedFiles = new List<(IFormFile File, (string ContentType, string Extension) Kind)>();
+        foreach (var file in files)
         {
-            Id = Guid.NewGuid(), EpisodeId = ep.Id, Type = "photo", MediaKey = key,
-            MediaContentType = kind.Value.ContentType, AuthoredBy = User.UserId(), CreatedAt = DateTime.UtcNow,
-        };
-        db.Logs.Add(log);
+            if (file.Length == 0 || file.Length > MaxPhotoBytes)
+                return Problem(detail: $"Photo '{file.FileName}' must be between 1 byte and {MaxPhotoBytes / 1_000_000} MB.", statusCode: 400);
+            var head = new byte[16];
+            int read;
+            await using (var peek = file.OpenReadStream()) read = await peek.ReadAsync(head, ct);
+            var kind = ImageSniffer.Detect(head.AsSpan(0, read));
+            if (kind is null) return Problem(detail: $"'{file.FileName}': only JPEG, PNG, WebP, HEIC or AVIF images are accepted.", statusCode: 400);
+            checkedFiles.Add((file, kind.Value));
+        }
+
+        var logs = new List<Log>();
+        foreach (var (file, kind) in checkedFiles)
+        {
+            string key;
+            await using (var stream = file.OpenReadStream()) key = await media.SaveAsync(stream, kind.Extension, ct);
+            logs.Add(new Log
+            {
+                Id = Guid.NewGuid(), EpisodeId = ep.Id, Type = "photo", MediaKey = key,
+                MediaContentType = kind.ContentType, AuthoredBy = User.UserId(), CreatedAt = DateTime.UtcNow,
+            });
+        }
+        db.Logs.AddRange(logs);
         await db.SaveChangesAsync(ct);
-        return StatusCode(201, Result(log, [], false));
+        return StatusCode(201, Result(logs, [], false));
     }
 
-    private static LogResultDto Result(Log log, List<Flag> flags, bool extractionFailed) => new(
-        ToDto(log), log.Extracted,
+    private static LogResultDto Result(Log log, List<Flag> flags, bool extractionFailed) =>
+        Result([log], flags, extractionFailed);
+
+    /// <summary>`log` is the first entry (kept for single-item clients); `logs` has all of them.</summary>
+    private static LogResultDto Result(List<Log> logs, List<Flag> flags, bool extractionFailed) => new(
+        ToDto(logs[0]), logs.Select(ToDto).ToList(), logs[0].Extracted,
         flags.Select(f => new FlagDto(f.Id, f.RuleId, f.Severity, f.Quote)).ToList(),
         PatientActions.From(flags.Select(f => f.Severity)), extractionFailed);
 
